@@ -1,0 +1,3 @@
+ - this app needs to have  centralized styles
+ - this application must impliment all data in database, No Static Data!
+ 

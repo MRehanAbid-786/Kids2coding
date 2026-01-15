@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "kids2codingApp",
-    "slug": "kids2codingApp",
+    "name": "kids2code",
+    "slug": "kids2code",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "kids2codingapp",
+    "scheme": "kids2code",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
