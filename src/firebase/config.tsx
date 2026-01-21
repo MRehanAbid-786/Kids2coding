@@ -3,26 +3,37 @@ import { getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 
+// Replace with YOUR actual Firebase config from console
 const firebaseConfig = {
-  apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
-  authDomain: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN,
-  projectId: process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID,
-  storageBucket: process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
-  appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID,
+  apiKey: "AIzaSyABC123...", // Your actual API key
+  authDomain: "kids2coding-12345.firebaseapp.com",
+  projectId: "kids2coding-12345",
+  storageBucket: "kids2coding-12345.appspot.com",
+  messagingSenderId: "123456789012",
+  appId: "1:123456789012:web:abc123def456",
+  // databaseURL is NOT needed for Firestore
 };
 
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
+
+// Initialize Services
 export const auth = getAuth(app);
-export const db = getFirestore(app);
+export const db = getFirestore(app); // Firestore Database
 export const storage = getStorage(app);
 
-// Collections
+// Firestore Collection References
 export const Collections = {
   USERS: 'users',
+  COURSES: 'courses',
+  LESSONS: 'lessons',
   PROGRESS: 'progress',
+  QUIZ_RESULTS: 'quizResults',
   BADGES: 'badges',
-  QUIZ_RESULTS: 'quiz_results',
   PROJECTS: 'projects',
+  CHALLENGES: 'challenges',
+  DAILY_CHALLENGES: 'dailyChallenges',
+  LEADERBOARD: 'leaderboard',
+  ACHIEVEMENTS: 'achievements',
+  MESSAGES: 'messages', // For AI Buddy chat
 };
