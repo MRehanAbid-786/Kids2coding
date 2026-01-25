@@ -48,6 +48,8 @@ const styles = StyleSheet.create({
     paddingBottom: 10,
   },
   title: {
+    paddingTop: 30,
+    paddingBottom: 10,
     fontSize: 32,
     fontWeight: 'bold',
     color: Colors.text,
