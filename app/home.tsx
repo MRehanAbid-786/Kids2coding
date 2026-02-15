@@ -1,217 +1,280 @@
 import { useRouter } from "expo-router";
+import { useEffect, useRef, useState } from "react";
 import {
-  View,
-  StyleSheet,
-  ImageBackground,
+  ActivityIndicator,
   Animated,
-  Easing
+  ImageBackground,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  TextInput,
+  TouchableOpacity,
+  View,
+  useWindowDimensions,
 } from "react-native";
 import { AppButton } from "../src/components/AppButton";
 import { AppText } from "../src/components/AppText";
-import { ScreenWrapper } from "../src/components/ScreenWrapper";
 import { Colors } from "../src/constants/colors";
-import { useEffect, useRef } from "react";
+import { useAuth } from "../src/hooks/useAuth"; // 👈 Import your hook
 
 export default function HomeScreen() {
   const router = useRouter();
-  const bounceAnim = useRef(new Animated.Value(0)).current;
-  const floatAnim = useRef(new Animated.Value(0)).current;
+  const { width, height } = useWindowDimensions();
+  const cardWidth = width > 768 ? 450 : width * 0.9;
+
+  // -------- USE AUTH HOOK --------
+  const { login, signup, loading: authLoading, user, isAuthenticated } = useAuth();
+
+  // -------- STATE --------
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [displayName, setDisplayName] = useState("");
+  const [isLoginMode, setIsLoginMode] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [message, setMessage] = useState({ text: "", type: "" });
+
+  // -------- ANIMATION --------
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(40)).current;
 
   useEffect(() => {
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(bounceAnim, {
-          toValue: -10,
-          duration: 500,
-          easing: Easing.inOut(Easing.ease),
-          useNativeDriver: true,
-        }),
-        Animated.timing(bounceAnim, {
-          toValue: 0,
-          duration: 500,
-          easing: Easing.inOut(Easing.ease),
-          useNativeDriver: true,
-        }),
-      ])
-    ).start();
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(floatAnim, {
-          toValue: 1,
-          duration: 2000,
-          easing: Easing.inOut(Easing.ease),
-          useNativeDriver: true,
-        }),
-        Animated.timing(floatAnim, {
-          toValue: 0,
-          duration: 2000,
-          easing: Easing.inOut(Easing.ease),
-          useNativeDriver: true,
-        }),
-      ])
-    ).start();
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 700,
+        useNativeDriver: true,
+      }),
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 500,
+        useNativeDriver: true,
+      }),
+    ]).start();
   }, []);
 
-  const opacity = floatAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0.5, 1],
-  });
+  useEffect(() => {
+    setMessage({ text: "", type: "" });
+  }, [isLoginMode]);
 
+  // Redirect if already logged in
+  useEffect(() => {
+    if (isAuthenticated && !submitting) {
+      console.log("✅ User authenticated, redirecting to dashboard");
+      router.replace("/dashboard");
+    }
+  }, [isAuthenticated, submitting]);
+
+  // -------- LOGIN USING SDK HOOK --------
+  const handleLogin = async () => {
+    if (!email.trim() || !password) {
+      setMessage({ text: "Enter email and password", type: "error" });
+      return;
+    }
+
+    setSubmitting(true);
+    setMessage({ text: "", type: "" });
+
+    try {
+      const result = await login(email.trim(), password);
+      
+      if (result.success) {
+        console.log("✅ Login successful");
+        // Navigation will happen via the useEffect above
+      } else {
+        setMessage({ text: result.error || "Login failed", type: "error" });
+        setSubmitting(false);
+      }
+    } catch (error: any) {
+      setMessage({ text: error.message || "Login failed", type: "error" });
+      setSubmitting(false);
+    }
+  };
+
+  // -------- SIGNUP USING SDK HOOK --------
+  const handleSignup = async () => {
+    if (!email.trim() || !displayName.trim() || !password) {
+      setMessage({ text: "Fill all fields", type: "error" });
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      setMessage({ text: "Passwords do not match", type: "error" });
+      return;
+    }
+
+    setSubmitting(true);
+    setMessage({ text: "", type: "" });
+
+    try {
+      const result = await signup(email.trim(), password, displayName.trim());
+      
+      if (result.success) {
+        setMessage({
+          text: "Account created! Logging you in...",
+          type: "success",
+        });
+        // User will be automatically logged in and redirected
+      } else {
+        setMessage({ text: result.error || "Signup failed", type: "error" });
+        setSubmitting(false);
+      }
+    } catch (error: any) {
+      setMessage({ text: error.message || "Signup failed", type: "error" });
+      setSubmitting(false);
+    }
+  };
+
+  // -------- UI --------
   return (
-    <ImageBackground
-      source={require("../assets/home-bg.jpg")}
-      style={styles.background}
-      resizeMode="cover"
-    >
-      <View style={styles.overlay}>
-        <View style={styles.content}>
-          <Animated.View style={[styles.titleContainer, { transform: [{ translateY: bounceAnim }] }]}>
-            <AppText style={styles.title}>Kids 2 Coding</AppText>
-            <Animated.View style={{ opacity: floatAnim.interpolate({ inputRange: [0, 1], outputRange: [0.6, 1] }) }}>
-              <AppText style={styles.subtitle}>Where Imagination Meets Code!</AppText>
+    <View style={styles.container}>
+      <ImageBackground
+        source={require("../assets/splash.jpg")}
+        style={[styles.bg, { width, height }]}
+      >
+        <View style={styles.overlay} />
+
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          style={{ flex: 1 }}
+        >
+          <ScrollView contentContainerStyle={styles.scroll}>
+            <Animated.View
+              style={[
+                styles.card,
+                {
+                  width: cardWidth,
+                  opacity: fadeAnim,
+                  transform: [{ translateY: slideAnim }],
+                },
+              ]}
+            >
+              <AppText style={styles.title}>Kids 2 Coding</AppText>
+              <AppText style={styles.subTitle}>
+                Unlock your inner genius 🤖
+              </AppText>
+
+              <View style={styles.tabs}>
+                {["Login", "Join"].map((t, i) => (
+                  <TouchableOpacity
+                    key={t}
+                    style={[
+                      styles.tab,
+                      isLoginMode === (i === 0) && styles.activeTab,
+                    ]}
+                    onPress={() => setIsLoginMode(i === 0)}
+                  >
+                    <AppText style={{ color: "#fff" }}>{t}</AppText>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              {message.text !== "" && (
+                <View
+                  style={[
+                    styles.msg,
+                    message.type === "error"
+                      ? styles.error
+                      : styles.success,
+                  ]}
+                >
+                  <AppText>{message.text}</AppText>
+                </View>
+              )}
+
+              {!isLoginMode && (
+                <TextInput
+                  placeholder="Display Name"
+                  placeholderTextColor="#ddd"
+                  style={styles.input}
+                  value={displayName}
+                  onChangeText={setDisplayName}
+                />
+              )}
+
+              <TextInput
+                placeholder="Email"
+                placeholderTextColor="#ddd"
+                style={styles.input}
+                value={email}
+                onChangeText={setEmail}
+                autoCapitalize="none"
+              />
+
+              <TextInput
+                placeholder="Password"
+                placeholderTextColor="#ddd"
+                style={styles.input}
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry
+              />
+
+              {!isLoginMode && (
+                <TextInput
+                  placeholder="Confirm Password"
+                  placeholderTextColor="#ddd"
+                  style={styles.input}
+                  value={confirmPassword}
+                  onChangeText={setConfirmPassword}
+                  secureTextEntry
+                />
+              )}
+
+              <AppButton
+                title={submitting ? "" : isLoginMode ? "Sign In" : "Create Account"}
+                onPress={isLoginMode ? handleLogin : handleSignup}
+                disabled={submitting}
+                style={styles.btn}
+              >
+                {submitting && <ActivityIndicator color="#fff" />}
+              </AppButton>
             </Animated.View>
-          </Animated.View>
-
-          {/* Buttons */}
-          <View style={styles.buttonContainer}>
-            <AppButton
-              title="🚀 Start Learning Adventure!"
-              onPress={() => router.push("/dashboard")}
-              style={styles.startButton}
-              textStyle={styles.buttonText}
-            />
-            <AppButton
-              title="🎮 Play Coding Games"
-              onPress={() => router.push("/games")}
-              style={styles.secondaryButton}
-              textStyle={styles.secondaryButtonText}
-            />
-            <AppButton
-              title="⭐ See Progress"
-              onPress={() => router.push("/progress")}
-              style={styles.tertiaryButton}
-              textStyle={styles.tertiaryButtonText}
-            />
-          </View>
-        </View>
-      </View>
-      <View style={styles.features}>
-            <View style={styles.featureItem}>
-              <AppText style={styles.featureEmoji}>🎯</AppText>
-              <AppText style={styles.featureText}>Fun Lessons</AppText>
-            </View>
-            <View style={styles.featureItem}>
-              <AppText style={styles.featureEmoji}>🏆</AppText>
-              <AppText style={styles.featureText}>Earn Badges</AppText>
-            </View>
-            <View style={styles.featureItem}>
-              <AppText style={styles.featureEmoji}>🤖</AppText>
-              <AppText style={styles.featureText}>AI Assistant</AppText>
-            </View>
-          </View>
-    </ImageBackground>
-
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </ImageBackground>
+    </View>
   );
 }
 
+// -------- STYLES --------
 const styles = StyleSheet.create({
-  background: {
-    flex: 1,
-    width: "100%",
-    height: "100%",
-  },
-
+  container: { flex: 1 },
+  bg: { justifyContent: "center" },
   overlay: {
-    flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0)",
-    justifyContent: "space-between",
-    paddingVertical: 40,
-    paddingHorizontal: 20,
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.45)",
   },
-
-  content: {
-    flex: 1,
-    justifyContent: "space-around",
+  scroll: {
+    flexGrow: 1,
+    justifyContent: "center",
+    alignItems: "center",
   },
-  titleContainer: {
-    alignItems: 'center',
-    marginTop: 40,
+  card: {
+    backgroundColor: "rgba(255,255,255,0.15)",
+    padding: 25,
+    borderRadius: 30,
   },
-  title: {
-    fontSize: 42,
-    padding: 13,
-    fontWeight: 'bold',
-    color: Colors.primary,
-    textAlign: 'center',
-    textShadowColor: 'rgba(0, 150, 255, 0.3)'
+  title: { fontSize: 32, color: "#fff", fontWeight: "800" },
+  subTitle: { color: "#ddd", marginBottom: 20 },
+  tabs: {
+    flexDirection: "row",
+    backgroundColor: "rgba(0,0,0,0.2)",
+    borderRadius: 12,
+    marginBottom: 15,
   },
-  subtitle: {
-    fontSize: 18,
-    color: Colors.textLight,
-    marginTop: 10,
-    textAlign: 'center',
+  tab: { flex: 1, padding: 10, alignItems: "center" },
+  activeTab: { backgroundColor: Colors.primary, borderRadius: 12 },
+  input: {
+    backgroundColor: "rgba(255,255,255,0.1)",
+    borderRadius: 12,
+    padding: 14,
+    color: "#fff",
+    marginBottom: 10,
   },
-  buttonContainer: {
-    gap: 16,
-    paddingHorizontal: 20,
-  },
-  startButton: {
-    backgroundColor: Colors.primary,
-    borderRadius: 20,
-    paddingVertical: 18,
-    shadowColor: Colors.primary,
-    shadowOffset: { width: 0, height: 8 },
-    shadowRadius: 15,
-    elevation: 8,
-    transform: [{ scale: 1 }],
-  },
-  buttonText: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: 'white',
-  },
-  secondaryButton: {
-    backgroundColor: Colors.secondary,
-    borderRadius: 20,
-    paddingVertical: 15,
-    borderWidth: 2,
-    borderColor: Colors.primary,
-  },
-  secondaryButtonText: {
-    fontSize: 18,
-    color: Colors.primary,
-    fontWeight: '600',
-  },
-  tertiaryButton: {
-    backgroundColor: 'transparent',
-    borderRadius: 20,
-    paddingVertical: 15,
-    borderWidth: 2,
-    borderColor: Colors.accent,
-  },
-  tertiaryButtonText: {
-    fontSize: 18,
-    color: Colors.accent,
-    fontWeight: '600',
-  },
-  features: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    padding: 0,
-    paddingBottom: 45
-  },
-  featureItem: {
-    alignItems: 'center',
-
-  },
-  featureEmoji: {
-    fontSize: 32,
-    marginBottom: 5,
-    padding: 5
-  },
-  featureText: {
-    fontSize: 14,
-    color: Colors.text,
-    fontWeight: '500',
-  },
+  btn: { marginTop: 10 },
+  msg: { padding: 10, borderRadius: 10, marginBottom: 10 },
+  error: { backgroundColor: "rgba(255,0,0,0.2)" },
+  success: { backgroundColor: "rgba(0,255,0,0.2)" },
 });

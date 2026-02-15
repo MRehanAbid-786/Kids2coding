@@ -1,6 +1,6 @@
 import { View, StyleSheet, TextInput, TouchableOpacity, Alert, ScrollView } from "react-native";
 import { useState } from "react";
-import * as Clipboard from "expo-clipboard"; // <-- import clipboard
+import * as Clipboard from "expo-clipboard";
 import { AppText } from "../components/AppText";
 import { Colors } from "../constants/colors";
 
@@ -11,18 +11,21 @@ export default function CodeRunner() {
   const [output, setOutput] = useState("");
 
   const runCode = () => {
+    let outputStr = "";
+    const originalLog = console.log;
+
     try {
-      let outputStr = "";
-      const originalLog = console.log;
-      console.log = (msg) => {
-        outputStr += msg + "\n";
+      console.log = (...args) => {
+        outputStr += args.join(" ") + "\n";
       };
+
       eval(code);
       setOutput(outputStr.trim());
-      console.log = originalLog;
     } catch (err) {
       Alert.alert("Error", err.message);
       setOutput("");
+    } finally {
+      console.log = originalLog;
     }
   };
 
@@ -35,16 +38,30 @@ export default function CodeRunner() {
     }
   };
 
+  const lineNumbers = code.split("\n").map((_, i) => i + 1);
+
   return (
     <ScrollView contentContainerStyle={styles.container}>
       <AppText style={styles.title}>Code Runner 🏃</AppText>
-      
-      <TextInput
-        style={styles.codeBox}
-        multiline
-        value={code}
-        onChangeText={setCode}
-      />
+
+      {/* 👇 Editor with Line Numbers */}
+      <View style={styles.editorContainer}>
+        <View style={styles.lineNumbers}>
+          {lineNumbers.map((num) => (
+            <AppText key={num} style={styles.lineNumberText}>
+              {num}
+            </AppText>
+          ))}
+        </View>
+
+        <TextInput
+          style={styles.codeBox}
+          multiline
+          value={code}
+          onChangeText={setCode}
+          textAlignVertical="top"
+        />
+      </View>
 
       <TouchableOpacity style={styles.button} onPress={runCode}>
         <AppText style={styles.buttonText}>Run Code ▶️</AppText>
@@ -52,10 +69,13 @@ export default function CodeRunner() {
 
       <AppText style={styles.outputTitle}>Output</AppText>
       <View style={styles.outputBox}>
-        <AppText>{output}</AppText>
+        <AppText selectable>{output}</AppText>
       </View>
 
-      <TouchableOpacity style={[styles.button, { marginTop: 10 }]} onPress={copyOutput}>
+      <TouchableOpacity
+        style={[styles.button, { marginTop: 10 }]}
+        onPress={copyOutput}
+      >
         <AppText style={styles.buttonText}>Copy Output 📋</AppText>
       </TouchableOpacity>
     </ScrollView>
@@ -67,19 +87,38 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   title: {
-    paddingTop:30,
+    paddingTop: 30,
     fontSize: 26,
-    fontWeight: "bold", 
-    marginBottom: 20
+    fontWeight: "bold",
+    marginBottom: 20,
   },
-  codeBox: {
+  editorContainer: {
+    flexDirection: "row",
     backgroundColor: "#111",
+    borderRadius: 12,
+    overflow: "hidden",
+  },
+  lineNumbers: {
+    paddingVertical: 15,
+    paddingHorizontal: 10,
+    backgroundColor: "#1c1c1c",
+  },
+  lineNumberText: {
+    color: "#777",
+    textAlign: "right",
+    fontFamily: "monospace",
+    lineHeight: 22,
+  },
+
+  codeBox: {
+    flex: 1,
     color: "#dbddde",
     padding: 15,
-    borderRadius: 12,
-    minHeight: 220,
+    minHeight: 280,
     fontFamily: "monospace",
+    lineHeight: 22,
   },
+
   button: {
     backgroundColor: Colors.primary,
     padding: 15,

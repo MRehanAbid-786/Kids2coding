@@ -1,24 +1,29 @@
 import { useRouter } from "expo-router";
-import { 
-  View, 
-  StyleSheet, 
-  ScrollView, 
+import { Filter, Grid, List, Search } from "lucide-react-native";
+import { useCallback, useEffect, useState } from "react";
+import {
+  ActivityIndicator,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
   TextInput,
-  TouchableOpacity 
+  TouchableOpacity,
+  View
 } from "react-native";
 import { AppText } from "../../src/components/AppText";
+import { CourseCard } from "../../src/components/CourseCard";
 import { ScreenWrapper } from "../../src/components/ScreenWrapper";
 import { Colors } from "../../src/constants/colors";
-import { coursesData } from "../../src/data/coursesData";
-import { CourseCard } from "../../src/components/CourseCard";
-import { Search, Filter, Grid, List } from "lucide-react-native";
-import { useState } from "react";
+import { getCourses } from "../../src/services/coursesService";
 
 export default function CoursesScreen() {
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState('');
-  const [viewMode, setViewMode] = useState('grid'); // 'grid' or 'list'
+  const [viewMode, setViewMode] = useState('grid');
   const [selectedCategory, setSelectedCategory] = useState('all');
+  const [courses, setCourses] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
   const categories = [
     { id: 'all', label: 'All Courses', emoji: '📚' },
@@ -29,17 +34,53 @@ export default function CoursesScreen() {
     { id: 'projects', label: 'Projects', emoji: '🏗️' },
   ];
 
-  const filteredCourses = coursesData.filter(course => {
-    const matchesSearch = course.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         course.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         course.tags.some(tag => tag.toLowerCase().includes(searchQuery.toLowerCase()));
+  // Load courses from Firebase
+  const loadCourses = useCallback(async () => {
+    try {
+      const coursesData = await getCourses();
+      setCourses(coursesData);
+    } catch (error) {
+      console.error("Error loading courses:", error);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadCourses();
+  }, [loadCourses]);
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    loadCourses();
+  }, [loadCourses]);
+
+  // Filter courses
+  const filteredCourses = courses.filter(course => {
+    const matchesSearch = searchQuery === '' || 
+      course.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      course.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (course.tags && course.tags.some(tag => tag.toLowerCase().includes(searchQuery.toLowerCase())));
     
     const matchesCategory = selectedCategory === 'all' || 
-                           course.level.toLowerCase().includes(selectedCategory) ||
-                           course.tags.some(tag => tag.toLowerCase().includes(selectedCategory));
+      (course.level && course.level.toLowerCase().includes(selectedCategory)) ||
+      (course.tags && course.tags.some(tag => tag.toLowerCase().includes(selectedCategory)));
     
     return matchesSearch && matchesCategory;
   });
+
+  // Loading state
+  if (loading) {
+    return (
+      <ScreenWrapper>
+        <View style={styles.centered}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+          <AppText style={styles.loadingText}>Loading courses...</AppText>
+        </View>
+      </ScreenWrapper>
+    );
+  }
 
   return (
     <ScreenWrapper>
@@ -102,13 +143,25 @@ export default function CoursesScreen() {
         ))}
       </ScrollView>
 
-      <ScrollView style={styles.content}>
+      <ScrollView 
+        style={styles.content}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={[Colors.primary]}
+          />
+        }
+      >
         {filteredCourses.length === 0 ? (
           <View style={styles.emptyState}>
             <AppText style={styles.emptyEmoji}>🔍</AppText>
             <AppText style={styles.emptyTitle}>No courses found</AppText>
             <AppText style={styles.emptyText}>
-              Try a different search or browse all courses
+              {courses.length === 0 
+                ? "No courses available yet. Check back soon!"
+                : "Try a different search or browse all courses"
+              }
             </AppText>
           </View>
         ) : viewMode === 'grid' ? (
@@ -258,5 +311,14 @@ const styles = StyleSheet.create({
     color: Colors.textLight,
     textAlign: 'center',
     maxWidth: 300,
+  },
+  centered: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 10,
+    color: Colors.textLight,
   },
 });

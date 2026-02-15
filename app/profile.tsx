@@ -1,157 +1,430 @@
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
+import { onValue, ref } from "firebase/database";
 import {
-    BookOpen,
-    Calendar,
-    Clock,
-    Edit3,
-    Link,
-    Mail,
-    MapPin,
-    Settings,
-    Share2,
-    Star,
-    Trophy,
-    Users
+  AlertCircle,
+  BookOpen,
+  Calendar,
+  Edit3,
+  Info,
+  Mail,
+  MapPin,
+  RefreshCw,
+  Settings,
+  Share2,
+  Star,
+  Trophy,
+  Users
 } from "lucide-react-native";
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
-    Alert,
-    ScrollView,
-    StyleSheet,
-    TouchableOpacity,
-    View
+  ActivityIndicator,
+  Modal,
+  ScrollView,
+  StyleSheet,
+  TouchableOpacity,
+  View
 } from "react-native";
 import { AppText } from "../src/components/AppText";
 import { ScreenWrapper } from "../src/components/ScreenWrapper";
 import { Colors } from "../src/constants/colors";
+import { database } from "../src/firebase/config";
+import { useAuth } from "../src/hooks/useAuth";
+
+// Timeout duration for loading (10 seconds)
+const LOADING_TIMEOUT = 10000;
 
 export default function ProfileScreen() {
   const router = useRouter();
-  
-  const [user, setUser] = useState({
-    name: "Code Learner",
-    username: "@codelearner",
-    bio: "Passionate about learning to code and building amazing projects! Always excited to learn something new.",
-    avatar: "😎",
-    level: 6,
-    xp: 4320,
-    nextLevelXP: 6000,
-    progress: 72,
-    streak: 7,
-    joined: "January 2024",
-    location: "Digital World",
-    website: "kids2coding.com/learners",
-    email: "learner@kids2coding.com",
-  });
+  const { user, loading: authLoading, isAuthenticated } = useAuth();
 
-  const stats = {
-    completedLessons: 35,
-    completedCourses: 3,
-    totalHours: 28.5,
-    accuracy: 87,
-    badges: 8,
-    rank: 4,
-    friends: 24,
-  };
+  const [profileData, setProfileData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [debugInfo, setDebugInfo] = useState<any>(null);
+  const [showDebugModal, setShowDebugModal] = useState(false);
+  const [loadingTimer, setLoadingTimer] = useState<NodeJS.Timeout | null>(null);
 
-  const achievements = [
-    { id: "1", title: "Quick Learner", date: "Jan 12", icon: "⚡" },
-    { id: "2", title: "Weekend Warrior", date: "Jan 18", icon: "🏋️‍♂️" },
-    { id: "3", title: "Perfect Score", date: "Jan 20", icon: "💯" },
-    { id: "4", title: "7-Day Streak", date: "Jan 22", icon: "🔥" },
-    { id: "5", title: "Course Master", date: "Jan 25", icon: "🎓" },
-    { id: "6", title: "Community Helper", date: "Jan 28", icon: "🤝" },
-  ];
+  // Check authentication on mount
+  useEffect(() => {
+    console.log("👤 Profile screen mounted");
+    console.log("📊 Auth state:", { 
+      user: user ? "exists" : "null", 
+      authLoading,
+      isAuthenticated,
+      uid: user?.uid 
+    });
 
-  const recentActivity = [
-    { time: "2h ago", action: "Completed JavaScript Quiz", xp: "+50 XP" },
-    { time: "Yesterday", action: "Earned Quick Learner badge", xp: "+100 XP" },
-    { time: "2 days ago", action: "Finished HTML Basics course", xp: "+200 XP" },
-    { time: "3 days ago", action: "Helped a fellow learner", xp: "+25 XP" },
-    { time: "1 week ago", action: "Reached 30-day streak", xp: "+150 XP" },
-  ];
+    // Set a timeout to prevent infinite loading
+    const timer = setTimeout(() => {
+      if (loading) {
+        setError("Loading timed out. Please check your connection.");
+        setLoading(false);
+        setDebugInfo(prev => ({
+          ...prev,
+          timeout: "Loading exceeded 10 seconds",
+          timestamp: new Date().toISOString()
+        }));
+      }
+    }, LOADING_TIMEOUT);
+    
+    setLoadingTimer(timer);
 
-  const handleEditProfile = () => {
-    router.push("/profile/edit");
-  };
+    return () => {
+      if (timer) clearTimeout(timer);
+    };
+  }, []);
 
-  const handleShareProfile = () => {
-    Alert.alert(
-      "Share Profile",
-      "Share your learning journey with others!",
-      [
-        { text: "Cancel", style: "cancel" },
-        { text: "Copy Link", onPress: () => {
-          // Copy profile link to clipboard
-          Alert.alert("Copied!", "Profile link copied to clipboard.");
-        }},
-        { text: "Share", onPress: () => {
-          // Share profile
-        }}
-      ]
+  // Fetch profile data when user is available
+  useEffect(() => {
+    // Don't do anything if still loading auth
+    if (authLoading) {
+      console.log("⏳ Auth still loading...");
+      return;
+    }
+
+    // Check if user is authenticated
+    if (!isAuthenticated || !user) {
+      console.log("❌ No authenticated user, redirecting to login");
+      setError("You need to be logged in to view your profile");
+      setLoading(false);
+      if (loadingTimer) clearTimeout(loadingTimer);
+      
+      // Redirect after a short delay
+      setTimeout(() => {
+        router.replace("/");
+      }, 2000);
+      return;
+    }
+
+    // Check if user has UID
+    if (!user.uid) {
+      console.log("❌ User has no UID");
+      setError("Invalid user data - missing UID");
+      setLoading(false);
+      if (loadingTimer) clearTimeout(loadingTimer);
+      return;
+    }
+
+    console.log(`✅ Fetching profile for user: ${user.uid}`);
+    setDebugInfo({
+      uid: user.uid,
+      email: user.email,
+      authStatus: "authenticated",
+      timestamp: new Date().toISOString()
+    });
+
+    let unsubscribe: (() => void) | undefined;
+
+    try {
+      // Create database reference with proper error handling
+      const db = database;
+      if (!db) {
+        throw new Error("Database not initialized");
+      }
+
+      const userRef = ref(db, `users/${user.uid}`);
+      
+      // Use onValue with error handling
+      unsubscribe = onValue(userRef, 
+        (snapshot) => {
+          try {
+            if (snapshot.exists()) {
+              const data = snapshot.val();
+              console.log("✅ Profile data found:", data);
+
+              // Calculate level and progress
+              const points = data.points || 0;
+              const currentLevel = Math.floor(points / 1000) + 1;
+              const xpInCurrentLevel = points % 1000;
+              const progressToNext = Math.floor((xpInCurrentLevel / 1000) * 100);
+
+              setProfileData({
+                ...data,
+                level: currentLevel,
+                xp: points,
+                nextLevelXP: currentLevel * 1000,
+                progress: progressToNext,
+                avatar: data.displayName?.[0]?.toUpperCase() || user.displayName?.[0]?.toUpperCase() || "👤",
+                joined: data.createdAt
+                  ? new Date(data.createdAt).toLocaleDateString("en-US", {
+                      month: "long",
+                      year: "numeric",
+                    })
+                  : "Recently",
+              });
+
+              setDebugInfo(prev => ({
+                ...prev,
+                dataFound: true,
+                profileExists: true,
+                dataKeys: Object.keys(data)
+              }));
+            } else {
+              console.log("⚠️ No profile data found, using defaults");
+              setProfileData(null);
+              setDebugInfo(prev => ({
+                ...prev,
+                dataFound: false,
+                profileExists: false,
+                message: "No profile document in database"
+              }));
+            }
+          } catch (err: any) {
+            console.error("❌ Error processing snapshot:", err);
+            setError(err.message || "Error processing profile data");
+          } finally {
+            setLoading(false);
+            if (loadingTimer) clearTimeout(loadingTimer);
+          }
+        },
+        (error) => {
+          console.error("❌ Database error:", error);
+          setError(error.message || "Failed to load profile");
+          setLoading(false);
+          if (loadingTimer) clearTimeout(loadingTimer);
+        }
+      );
+    } catch (err: any) {
+      console.error("❌ Error setting up listener:", err);
+      setError(err.message || "Failed to connect to database");
+      setLoading(false);
+      if (loadingTimer) clearTimeout(loadingTimer);
+    }
+
+    return () => {
+      if (unsubscribe) {
+        try {
+          unsubscribe();
+        } catch (err) {
+          console.warn("⚠️ Error unsubscribing:", err);
+        }
+      }
+    };
+  }, [user, authLoading, isAuthenticated]);
+
+  // Handle manual refresh
+  const handleRefresh = useCallback(() => {
+    setLoading(true);
+    setError(null);
+    // Force a re-render to trigger useEffect again
+    setProfileData(null);
+  }, []);
+
+  // Handle retry after error
+  const handleRetry = useCallback(() => {
+    setError(null);
+    setLoading(true);
+    handleRefresh();
+  }, []);
+
+  // Show loading state
+  if (authLoading || loading) {
+    return (
+      <ScreenWrapper>
+        <View style={styles.loaderContainer}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+          <AppText style={styles.loadingText}>
+            {authLoading ? "Checking authentication..." : "Loading your profile..."}
+          </AppText>
+          <AppText style={styles.loadingSubtext}>
+            This may take a few seconds
+          </AppText>
+          <TouchableOpacity 
+            style={styles.cancelButton}
+            onPress={() => router.back()}
+          >
+            <AppText style={styles.cancelButtonText}>Go Back</AppText>
+          </TouchableOpacity>
+        </View>
+      </ScreenWrapper>
     );
+  }
+
+  // Show error state
+  if (error) {
+    return (
+      <ScreenWrapper>
+        <View style={styles.errorContainer}>
+          <AlertCircle size={60} color={Colors.error} />
+          <AppText style={styles.errorTitle}>Oops!</AppText>
+          <AppText style={styles.errorMessage}>{error}</AppText>
+          
+          <View style={styles.errorActions}>
+            <TouchableOpacity 
+              style={styles.retryButton}
+              onPress={handleRetry}
+            >
+              <RefreshCw size={20} color="white" />
+              <AppText style={styles.retryButtonText}>Retry</AppText>
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+              style={styles.debugButton}
+              onPress={() => setShowDebugModal(true)}
+            >
+              <Info size={20} color={Colors.primary} />
+              <AppText style={styles.debugButtonText}>Debug Info</AppText>
+            </TouchableOpacity>
+          </View>
+
+          <TouchableOpacity 
+            style={styles.backLink}
+            onPress={() => router.back()}
+          >
+            <AppText style={styles.backLinkText}>← Back to Dashboard</AppText>
+          </TouchableOpacity>
+        </View>
+
+        {/* Debug Modal */}
+        <Modal
+          visible={showDebugModal}
+          transparent={true}
+          animationType="slide"
+          onRequestClose={() => setShowDebugModal(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <AppText style={styles.modalTitle}>Debug Information</AppText>
+                <TouchableOpacity onPress={() => setShowDebugModal(false)}>
+                  <AppText style={styles.modalClose}>✕</AppText>
+                </TouchableOpacity>
+              </View>
+              
+              <ScrollView style={styles.modalBody}>
+                <View style={styles.debugSection}>
+                  <AppText style={styles.debugLabel}>User Info:</AppText>
+                  <AppText style={styles.debugText}>
+                    UID: {user?.uid || 'N/A'}{'\n'}
+                    Email: {user?.email || 'N/A'}{'\n'}
+                    Display Name: {user?.displayName || 'N/A'}{'\n'}
+                    Auth Status: {isAuthenticated ? 'Logged In' : 'Not Logged In'}
+                  </AppText>
+                </View>
+
+                <View style={styles.debugSection}>
+                  <AppText style={styles.debugLabel}>Error Details:</AppText>
+                  <AppText style={styles.debugText}>
+                    {error || 'No error'}
+                  </AppText>
+                </View>
+
+                <View style={styles.debugSection}>
+                  <AppText style={styles.debugLabel}>Debug Info:</AppText>
+                  <AppText style={styles.debugText}>
+                    {JSON.stringify(debugInfo, null, 2)}
+                  </AppText>
+                </View>
+
+                <View style={styles.debugSection}>
+                  <AppText style={styles.debugLabel}>Troubleshooting Tips:</AppText>
+                  <AppText style={styles.debugText}>
+                    1. Check if user exists in Firebase Auth{'\n'}
+                    2. Verify database rules allow reading users/{user?.uid}{'\n'}
+                    3. Check if 'users' node has data for this UID{'\n'}
+                    4. Ensure database URL is correct in config{'\n'}
+                    5. Try logging out and back in
+                  </AppText>
+                </View>
+              </ScrollView>
+
+              <TouchableOpacity 
+                style={styles.modalButton}
+                onPress={() => setShowDebugModal(false)}
+              >
+                <AppText style={styles.modalButtonText}>Close</AppText>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+      </ScreenWrapper>
+    );
+  }
+
+  // Fallback if no data found
+  const displayUser = profileData || {
+    displayName: user?.displayName || user?.email?.split('@')[0] || "Coder Kid",
+    email: user?.email || "No email",
+    bio: "Learning to code and building awesome things!",
+    location: "Digital World",
+    streak: 0,
+    points: 0,
+    completedLessons: {},
+    badges: [],
+    level: 1,
+    xp: 0,
+    progress: 0,
+    avatar: user?.displayName?.[0]?.toUpperCase() || user?.email?.[0]?.toUpperCase() || "👤",
+    joined: "Recently"
   };
 
   return (
-    <ScreenWrapper scrollable>
-      {/* Header */}
+    <ScreenWrapper>
       <LinearGradient
         colors={[Colors.primary, Colors.primaryDark]}
         style={styles.header}
       >
         <View style={styles.headerContent}>
           <View style={styles.headerTop}>
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.backButton}
               onPress={() => router.back()}
             >
               <AppText style={styles.backText}>← Back</AppText>
             </TouchableOpacity>
             <View style={styles.headerActions}>
-              <TouchableOpacity 
-                style={styles.headerAction}
-                onPress={handleShareProfile}
-              >
+              <TouchableOpacity style={styles.headerAction}>
                 <Share2 size={20} color="white" />
               </TouchableOpacity>
               <TouchableOpacity 
                 style={styles.headerAction}
-                onPress={() => router.push("/settings")}
+                onPress={() => setShowDebugModal(true)}
               >
-                <Settings size={20} color="white" />
+                <Info size={20} color="white" />
               </TouchableOpacity>
             </View>
           </View>
 
-          {/* Profile Info */}
           <View style={styles.profileInfo}>
             <View style={styles.avatarContainer}>
               <View style={styles.avatar}>
-                <AppText style={styles.avatarText}>{user.avatar}</AppText>
+                <AppText style={styles.avatarText}>
+                  {displayUser.avatar}
+                </AppText>
               </View>
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={styles.editButton}
-                onPress={handleEditProfile}
+                onPress={() => router.push("/profile/edit")}
               >
                 <Edit3 size={16} color={Colors.primary} />
               </TouchableOpacity>
             </View>
 
             <View style={styles.userInfo}>
-              <AppText style={styles.userName}>{user.name}</AppText>
-              <AppText style={styles.userUsername}>{user.username}</AppText>
-              <AppText style={styles.userBio}>{user.bio}</AppText>
+              <AppText style={styles.userName}>
+                {displayUser.displayName}
+              </AppText>
+              <AppText style={styles.userUsername}>
+                @{displayUser.displayName?.toLowerCase().replace(/\s/g, "")}
+              </AppText>
+              <AppText style={styles.userBio}>
+                {displayUser.bio}
+              </AppText>
             </View>
 
             <View style={styles.userMeta}>
               <View style={styles.metaItem}>
                 <Calendar size={14} color="rgba(255,255,255,0.8)" />
-                <AppText style={styles.metaText}>Joined {user.joined}</AppText>
+                <AppText style={styles.metaText}>
+                  Joined {displayUser.joined}
+                </AppText>
               </View>
               <View style={styles.metaItem}>
                 <MapPin size={14} color="rgba(255,255,255,0.8)" />
-                <AppText style={styles.metaText}>{user.location}</AppText>
+                <AppText style={styles.metaText}>
+                  {displayUser.location}
+                </AppText>
               </View>
             </View>
           </View>
@@ -164,157 +437,60 @@ export default function ProfileScreen() {
           <View style={styles.levelHeader}>
             <View style={styles.levelBadge}>
               <Trophy size={20} color={Colors.warning} />
-              <AppText style={styles.levelNumber}>Level {user.level}</AppText>
+              <AppText style={styles.levelNumber}>
+                Level {displayUser.level}
+              </AppText>
             </View>
-            <AppText style={styles.levelXP}>{user.xp} / {user.nextLevelXP} XP</AppText>
+            <AppText style={styles.levelXP}>{displayUser.xp} XP</AppText>
           </View>
           <View style={styles.progressBar}>
-            <View style={[styles.progressFill, { width: `${user.progress}%` }]} />
+            <View
+              style={[
+                styles.progressFill,
+                { width: `${displayUser.progress}%` },
+              ]}
+            />
           </View>
-          <AppText style={styles.progressText}>{user.progress}% to next level</AppText>
+          <AppText style={styles.progressText}>
+            {displayUser.progress}% to level {displayUser.level + 1}
+          </AppText>
         </View>
 
         {/* Stats Grid */}
         <View style={styles.statsGrid}>
           <View style={styles.statCard}>
             <BookOpen size={24} color={Colors.primary} />
-            <AppText style={styles.statValue}>{stats.completedLessons}</AppText>
+            <AppText style={styles.statValue}>
+              {displayUser.completedLessons
+                ? Object.keys(displayUser.completedLessons).length
+                : 0}
+            </AppText>
             <AppText style={styles.statLabel}>Lessons</AppText>
           </View>
           <View style={styles.statCard}>
-            <Clock size={24} color={Colors.success} />
-            <AppText style={styles.statValue}>{stats.totalHours}h</AppText>
-            <AppText style={styles.statLabel}>Hours</AppText>
-          </View>
-          <View style={styles.statCard}>
             <Star size={24} color={Colors.warning} />
-            <AppText style={styles.statValue}>{stats.accuracy}%</AppText>
-            <AppText style={styles.statLabel}>Accuracy</AppText>
+            <AppText style={styles.statValue}>
+              {displayUser.points}
+            </AppText>
+            <AppText style={styles.statLabel}>Points</AppText>
           </View>
           <View style={styles.statCard}>
-            <Users size={24} color={Colors.accent} />
-            <AppText style={styles.statValue}>{stats.friends}</AppText>
-            <AppText style={styles.statLabel}>Friends</AppText>
+            <Trophy size={24} color={Colors.accent} />
+            <AppText style={styles.statValue}>
+              {displayUser.badges?.length || 0}
+            </AppText>
+            <AppText style={styles.statLabel}>Badges</AppText>
+          </View>
+          <View style={styles.statCard}>
+            <Users size={24} color={Colors.success} />
+            <AppText style={styles.statValue}>
+              {displayUser.streak || 0}
+            </AppText>
+            <AppText style={styles.statLabel}>Day Streak</AppText>
           </View>
         </View>
 
-        {/* Streak */}
-        <View style={styles.streakCard}>
-          <View style={styles.streakContent}>
-            <View style={styles.streakIcon}>
-              <AppText style={styles.streakEmoji}>🔥</AppText>
-            </View>
-            <View style={styles.streakInfo}>
-              <AppText style={styles.streakTitle}>Current Streak</AppText>
-              <AppText style={styles.streakValue}>{user.streak} days</AppText>
-            </View>
-          </View>
-          <AppText style={styles.streakText}>
-            Keep going! 3 more days for a badge!
-          </AppText>
-        </View>
-
-        {/* Achievements */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <AppText style={styles.sectionTitle}>Achievements 🏆</AppText>
-            <TouchableOpacity onPress={() => router.push("/badges")}>
-              <AppText style={styles.seeAll}>See All →</AppText>
-            </TouchableOpacity>
-          </View>
-          <ScrollView 
-            horizontal 
-            showsHorizontalScrollIndicator={false}
-            style={styles.achievementsList}
-          >
-            {achievements.map(achievement => (
-              <TouchableOpacity 
-                key={achievement.id}
-                style={styles.achievementCard}
-                onPress={() => router.push(`/achievements/${achievement.id}`)}
-              >
-                <View style={styles.achievementIcon}>
-                  <AppText style={styles.achievementEmoji}>{achievement.icon}</AppText>
-                </View>
-                <AppText style={styles.achievementTitle}>{achievement.title}</AppText>
-                <AppText style={styles.achievementDate}>{achievement.date}</AppText>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        </View>
-
-        {/* Recent Activity */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <AppText style={styles.sectionTitle}>Recent Activity 📝</AppText>
-          </View>
-          <View style={styles.activityList}>
-            {recentActivity.map((activity, index) => (
-              <View key={index} style={styles.activityItem}>
-                <View style={styles.activityIcon}>
-                  <AppText style={styles.activityEmoji}>⚡</AppText>
-                </View>
-                <View style={styles.activityContent}>
-                  <AppText style={styles.activityAction}>{activity.action}</AppText>
-                  <AppText style={styles.activityTime}>{activity.time}</AppText>
-                </View>
-                <View style={styles.activityXP}>
-                  <AppText style={styles.xpText}>{activity.xp}</AppText>
-                </View>
-              </View>
-            ))}
-          </View>
-        </View>
-
-        {/* Courses Progress */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <AppText style={styles.sectionTitle}>Courses Progress 📚</AppText>
-            <TouchableOpacity onPress={() => router.push("/courses")}>
-              <AppText style={styles.seeAll}>Continue →</AppText>
-            </TouchableOpacity>
-          </View>
-          <View style={styles.coursesProgress}>
-            <View style={styles.courseProgressItem}>
-              <View style={styles.courseInfo}>
-                <View style={[styles.courseColor, { backgroundColor: Colors.primary }]} />
-                <AppText style={styles.courseName}>Web Basics</AppText>
-              </View>
-              <View style={styles.courseProgress}>
-                <View style={styles.courseProgressBar}>
-                  <View style={[styles.courseProgressFill, { width: '85%' }]} />
-                </View>
-                <AppText style={styles.courseProgressText}>85%</AppText>
-              </View>
-            </View>
-            <View style={styles.courseProgressItem}>
-              <View style={styles.courseInfo}>
-                <View style={[styles.courseColor, { backgroundColor: Colors.warning }]} />
-                <AppText style={styles.courseName}>JavaScript</AppText>
-              </View>
-              <View style={styles.courseProgress}>
-                <View style={styles.courseProgressBar}>
-                  <View style={[styles.courseProgressFill, { width: '60%' }]} />
-                </View>
-                <AppText style={styles.courseProgressText}>60%</AppText>
-              </View>
-            </View>
-            <View style={styles.courseProgressItem}>
-              <View style={styles.courseInfo}>
-                <View style={[styles.courseColor, { backgroundColor: Colors.success }]} />
-                <AppText style={styles.courseName}>Python</AppText>
-              </View>
-              <View style={styles.courseProgress}>
-                <View style={styles.courseProgressBar}>
-                  <View style={[styles.courseProgressFill, { width: '30%' }]} />
-                </View>
-                <AppText style={styles.courseProgressText}>30%</AppText>
-              </View>
-            </View>
-          </View>
-        </View>
-
-        {/* Contact Info */}
+        {/* Contact Information */}
         <View style={styles.contactCard}>
           <View style={styles.contactHeader}>
             <Mail size={20} color={Colors.primary} />
@@ -323,18 +499,26 @@ export default function ProfileScreen() {
           <View style={styles.contactInfo}>
             <View style={styles.contactItem}>
               <Mail size={16} color={Colors.textLight} />
-              <AppText style={styles.contactText}>{user.email}</AppText>
-            </View>
-            <View style={styles.contactItem}>
-              <Link size={16} color={Colors.textLight} />
-              <AppText style={styles.contactText}>{user.website}</AppText>
+              <AppText style={styles.contactText}>{displayUser.email}</AppText>
             </View>
           </View>
+        </View>
+
+        {/* Quick Actions */}
+        <View style={styles.quickActions}>
           <TouchableOpacity 
-            style={styles.contactButton}
-            onPress={() => router.push("/profile/edit/contact")}
+            style={styles.quickActionButton}
+            onPress={() => router.push("/settings")}
           >
-            <AppText style={styles.contactButtonText}>Update Contact Info</AppText>
+            <Settings size={20} color={Colors.primary} />
+            <AppText style={styles.quickActionText}>Settings</AppText>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.quickActionButton}
+            onPress={handleRefresh}
+          >
+            <RefreshCw size={20} color={Colors.primary} />
+            <AppText style={styles.quickActionText}>Refresh</AppText>
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -343,430 +527,387 @@ export default function ProfileScreen() {
 }
 
 const styles = StyleSheet.create({
+  loaderContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  loadingText: {
+    marginTop: 20,
+    fontSize: 16,
+    color: Colors.text,
+    fontWeight: '600',
+  },
+  loadingSubtext: {
+    marginTop: 8,
+    fontSize: 14,
+    color: Colors.textLight,
+  },
+  cancelButton: {
+    marginTop: 30,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    backgroundColor: Colors.surface,
+    borderRadius: 10,
+  },
+  cancelButtonText: {
+    color: Colors.primary,
+    fontWeight: '600',
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 30,
+  },
+  errorTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: Colors.text,
+    marginTop: 20,
+    marginBottom: 10,
+  },
+  errorMessage: {
+    fontSize: 16,
+    color: Colors.textLight,
+    textAlign: 'center',
+    marginBottom: 30,
+  },
+  errorActions: {
+    flexDirection: 'row',
+    gap: 15,
+    marginBottom: 30,
+  },
+  retryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: Colors.primary,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+  },
+  retryButtonText: {
+    color: 'white',
+    fontWeight: '600',
+  },
+  debugButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: Colors.surface,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  debugButtonText: {
+    color: Colors.primary,
+    fontWeight: '600',
+  },
+  backLink: {
+    marginTop: 20,
+  },
+  backLinkText: {
+    color: Colors.primary,
+    fontSize: 16,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    backgroundColor: 'white',
+    borderRadius: 20,
+    width: '100%',
+    maxHeight: '80%',
+    overflow: 'hidden',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: Colors.text,
+  },
+  modalClose: {
+    fontSize: 20,
+    color: Colors.textLight,
+  },
+  modalBody: {
+    padding: 20,
+  },
+  debugSection: {
+    marginBottom: 20,
+  },
+  debugLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.text,
+    marginBottom: 5,
+  },
+  debugText: {
+    fontSize: 12,
+    color: Colors.textLight,
+    fontFamily: 'monospace',
+    lineHeight: 18,
+  },
+  modalButton: {
+    backgroundColor: Colors.primary,
+    padding: 15,
+    alignItems: 'center',
+  },
+  modalButtonText: {
+    color: 'white',
+    fontWeight: '600',
+  },
   header: {
-    paddingTop: 60,
-    paddingBottom: 40,
+    paddingTop: 50,
+    paddingBottom: 30,
   },
   headerContent: {
     paddingHorizontal: 20,
   },
   headerTop: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 30,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
   },
   backButton: {
     padding: 8,
   },
   backText: {
-    color: "white",
+    color: 'white',
     fontSize: 16,
   },
   headerActions: {
-    flexDirection: "row",
+    flexDirection: 'row',
+    gap: 10,
   },
   headerAction: {
-    padding: 8,
-    marginLeft: 10,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   profileInfo: {
-    alignItems: "center",
+    alignItems: 'center',
   },
   avatarContainer: {
-    position: "relative",
-    marginBottom: 20,
+    position: 'relative',
+    marginBottom: 15,
   },
   avatar: {
     width: 100,
     height: 100,
     borderRadius: 50,
-    backgroundColor: "rgba(255,255,255,0.2)",
-    justifyContent: "center",
-    alignItems: "center",
+    backgroundColor: 'white',
+    justifyContent: 'center',
+    alignItems: 'center',
     borderWidth: 4,
-    borderColor: "white",
+    borderColor: 'white',
   },
   avatarText: {
-    fontSize: 48,
+    fontSize: 40,
+    color: Colors.primary,
   },
   editButton: {
-    position: "absolute",
+    position: 'absolute',
     bottom: 0,
     right: 0,
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: "white",
-    justifyContent: "center",
-    alignItems: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 3,
+    backgroundColor: 'white',
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: Colors.primary,
   },
   userInfo: {
-    alignItems: "center",
-    marginBottom: 20,
+    alignItems: 'center',
+    marginBottom: 15,
   },
   userName: {
-    fontSize: 28,
-    fontWeight: "bold",
-    color: "white",
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: 'white',
     marginBottom: 5,
   },
   userUsername: {
-    fontSize: 16,
-    color: "rgba(255,255,255,0.8)",
-    marginBottom: 15,
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.8)',
+    marginBottom: 8,
   },
   userBio: {
     fontSize: 14,
-    color: "rgba(255,255,255,0.9)",
-    textAlign: "center",
-    lineHeight: 20,
-    paddingHorizontal: 20,
+    color: 'white',
+    textAlign: 'center',
+    opacity: 0.9,
   },
   userMeta: {
-    flexDirection: "row",
-    justifyContent: "center",
+    flexDirection: 'row',
     gap: 20,
   },
   metaItem: {
-    flexDirection: "row",
-    alignItems: "center",
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
   },
   metaText: {
-    marginLeft: 8,
-    fontSize: 14,
-    color: "rgba(255,255,255,0.8)",
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.8)',
   },
   content: {
     flex: 1,
     padding: 20,
-    paddingBottom: 100,
-    marginTop: -30,
   },
   levelCard: {
-    backgroundColor: Colors.surface,
-    borderRadius: 20,
+    backgroundColor: 'white',
+    borderRadius: 15,
     padding: 20,
     marginBottom: 20,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
-    shadowRadius: 8,
+    shadowRadius: 5,
     elevation: 3,
   },
   levelHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: 15,
   },
   levelBadge: {
-    flexDirection: "row",
-    alignItems: "center",
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   levelNumber: {
     fontSize: 18,
-    fontWeight: "bold",
+    fontWeight: 'bold',
     color: Colors.text,
-    marginLeft: 10,
   },
   levelXP: {
     fontSize: 14,
     color: Colors.textLight,
-    fontWeight: "600",
   },
   progressBar: {
-    height: 10,
+    height: 8,
     backgroundColor: Colors.borderLight,
-    borderRadius: 5,
-    overflow: "hidden",
-    marginBottom: 10,
+    borderRadius: 4,
+    overflow: 'hidden',
+    marginBottom: 8,
   },
   progressFill: {
-    height: "100%",
+    height: '100%',
     backgroundColor: Colors.primary,
-    borderRadius: 5,
+    borderRadius: 4,
   },
   progressText: {
-    fontSize: 14,
+    fontSize: 12,
     color: Colors.textLight,
-    textAlign: "center",
+    textAlign: 'right',
   },
   statsGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "space-between",
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
     marginBottom: 20,
   },
   statCard: {
-    width: "48%",
-    backgroundColor: Colors.surface,
+    flex: 1,
+    minWidth: '45%',
+    backgroundColor: 'white',
     borderRadius: 15,
-    padding: 20,
-    marginBottom: 15,
-    alignItems: "center",
-    shadowColor: "#000",
+    padding: 15,
+    alignItems: 'center',
+    shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
+    shadowOpacity: 0.1,
     shadowRadius: 5,
-    elevation: 2,
+    elevation: 3,
   },
   statValue: {
     fontSize: 24,
-    fontWeight: "bold",
+    fontWeight: 'bold',
     color: Colors.text,
-    marginTop: 10,
-    marginBottom: 5,
+    marginTop: 8,
+    marginBottom: 4,
   },
   statLabel: {
     fontSize: 12,
     color: Colors.textLight,
   },
-  streakCard: {
-    backgroundColor: Colors.surface,
-    borderRadius: 20,
-    padding: 20,
-    marginBottom: 30,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  streakContent: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 10,
-  },
-  streakIcon: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: Colors.warning + "20",
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: 15,
-  },
-  streakEmoji: {
-    fontSize: 24,
-  },
-  streakInfo: {
-    flex: 1,
-  },
-  streakTitle: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: Colors.textLight,
-  },
-  streakValue: {
-    fontSize: 28,
-    fontWeight: "bold",
-    color: Colors.text,
-  },
-  streakText: {
-    fontSize: 14,
-    color: Colors.textLight,
-    fontStyle: "italic",
-  },
-  section: {
-    marginBottom: 30,
-  },
-  sectionHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 15,
-  },
-  sectionTitle: {
-    fontSize: 22,
-    fontWeight: "bold",
-    color: Colors.text,
-  },
-  seeAll: {
-    fontSize: 14,
-    color: Colors.primary,
-    fontWeight: "600",
-  },
-  achievementsList: {
-    marginBottom: 10,
-  },
-  achievementCard: {
-    width: 120,
-    backgroundColor: Colors.surface,
-    borderRadius: 15,
-    padding: 15,
-    marginRight: 15,
-    alignItems: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 5,
-    elevation: 2,
-  },
-  achievementIcon: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: Colors.borderLight,
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 10,
-  },
-  achievementEmoji: {
-    fontSize: 24,
-  },
-  achievementTitle: {
-    fontSize: 14,
-    fontWeight: "bold",
-    color: Colors.text,
-    marginBottom: 5,
-    textAlign: "center",
-  },
-  achievementDate: {
-    fontSize: 12,
-    color: Colors.textLight,
-  },
-  activityList: {
-    gap: 15,
-  },
-  activityItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: Colors.surface,
-    borderRadius: 15,
-    padding: 15,
-  },
-  activityIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: Colors.borderLight,
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: 15,
-  },
-  activityEmoji: {
-    fontSize: 20,
-  },
-  activityContent: {
-    flex: 1,
-  },
-  activityAction: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: Colors.text,
-    marginBottom: 4,
-  },
-  activityTime: {
-    fontSize: 12,
-    color: Colors.textLight,
-  },
-  activityXP: {
-    backgroundColor: Colors.success + "20",
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 10,
-  },
-  xpText: {
-    fontSize: 12,
-    fontWeight: "bold",
-    color: Colors.success,
-  },
-  coursesProgress: {
-    gap: 15,
-  },
-  courseProgressItem: {
-    backgroundColor: Colors.surface,
-    borderRadius: 15,
-    padding: 15,
-  },
-  courseInfo: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 10,
-  },
-  courseColor: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    marginRight: 10,
-  },
-  courseName: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: Colors.text,
-  },
-  courseProgress: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  courseProgressBar: {
-    flex: 1,
-    height: 6,
-    backgroundColor: Colors.borderLight,
-    borderRadius: 3,
-    overflow: "hidden",
-    marginRight: 15,
-  },
-  courseProgressFill: {
-    height: "100%",
-    backgroundColor: Colors.primary,
-    borderRadius: 3,
-  },
-  courseProgressText: {
-    fontSize: 14,
-    fontWeight: "bold",
-    color: Colors.text,
-  },
   contactCard: {
-    backgroundColor: Colors.surface,
-    borderRadius: 20,
+    backgroundColor: 'white',
+    borderRadius: 15,
     padding: 20,
-    marginBottom: 30,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
-    shadowRadius: 8,
+    shadowRadius: 5,
     elevation: 3,
   },
   contactHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 15,
   },
   contactTitle: {
-    fontSize: 18,
-    fontWeight: "bold",
+    fontSize: 16,
+    fontWeight: '600',
     color: Colors.text,
-    marginLeft: 10,
   },
   contactInfo: {
-    gap: 15,
-    marginBottom: 20,
+    gap: 10,
   },
   contactItem: {
-    flexDirection: "row",
-    alignItems: "center",
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
   },
   contactText: {
-    marginLeft: 10,
     fontSize: 14,
-    color: Colors.textLight,
-  },
-  contactButton: {
-    backgroundColor: Colors.borderLight,
-    borderRadius: 12,
-    paddingVertical: 12,
-    alignItems: "center",
-  },
-  contactButtonText: {
-    fontSize: 16,
-    fontWeight: "600",
     color: Colors.text,
+  },
+  quickActions: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 30,
+  },
+  quickActionButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: Colors.surface,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  quickActionText: {
+    fontSize: 14,
+    color: Colors.text,
+    fontWeight: '600',
   },
 });

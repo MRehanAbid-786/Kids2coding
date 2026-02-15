@@ -1,5 +1,6 @@
+import React, { useEffect } from "react";
+import { View, StyleSheet, ScrollView, TouchableOpacity, Animated, Easing } from "react-native";
 import { useRouter } from "expo-router";
-import { View, StyleSheet, ScrollView, TouchableOpacity, Image } from "react-native";
 import { AppText } from "../src/components/AppText";
 import { ScreenWrapper } from "../src/components/ScreenWrapper";
 import { Colors } from "../src/constants/colors";
@@ -15,13 +16,61 @@ const games = [
 
 export default function GamesScreen() {
   const router = useRouter();
+  const bounceAnim = new Animated.Value(0);
+  const floatAnim = new Animated.Value(0);
+
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(bounceAnim, {
+          toValue: -20,
+          duration: 500,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+        Animated.timing(bounceAnim, {
+          toValue: 0,
+          duration: 500,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
+
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(floatAnim, {
+          toValue: 1,
+          duration: 2000,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+        Animated.timing(floatAnim, {
+          toValue: 0,
+          duration: 2000,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
+  }, []);
 
   return (
     <ScreenWrapper scrollable>
+      <Animated.View style={[styles.titleContainer, { transform: [{ translateY: bounceAnim }] }]}>
+        <AppText style={styles.title1}>Kids 2 Coding</AppText>
+        <Animated.View
+          style={{ opacity: floatAnim.interpolate({ inputRange: [0, 1], outputRange: [0.6, 1] }) }}
+        >
+          <AppText style={styles.subtitle}>Where Imagination Meets Code!</AppText>
+        </Animated.View>
+      </Animated.View>
+
       <View style={styles.header}>
         <AppText style={styles.title}>Coding Games 🎮</AppText>
         <AppText style={styles.subtitle}>Learn to code by playing fun games!</AppText>
       </View>
+
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.gamesGrid}>
           {games.map((game) => (
@@ -42,37 +91,45 @@ export default function GamesScreen() {
 }
 
 const styles = StyleSheet.create({
+  titleContainer: {marginBottom: 20,paddingTop:100 ,color: 'rgba(0, 150, 255, 0.3)', paddingStart:20, paddingEnd:20},
   header: {
     paddingHorizontal: 20,
     paddingTop: 20,
     paddingBottom: 10,
   },
-  title: {
-    paddingTop: 30,
+    title1: {
+    paddingTop: 10,
     paddingBottom: 10,
     fontSize: 32,
-    fontWeight: 'bold',
-    color: Colors.text,
+    fontWeight: "bold",
+     color:'rgb(5, 87, 145)', 
+  },
+  title: {
+    paddingTop: 10,
+    paddingBottom: 10,
+    fontSize: 24,
+    fontWeight: "bold",
+     color:'rgb(5, 87, 145)', 
   },
   subtitle: {
     fontSize: 16,
-    color: Colors.textLight,
+   
     marginTop: 5,
   },
   content: {
     padding: 20,
   },
   gamesGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
   },
   gameCard: {
-    width: '48%',
+    width: "48%",
     borderRadius: 20,
     padding: 20,
     marginBottom: 15,
-    alignItems: 'center',
+    alignItems: "center",
   },
   gameEmoji: {
     fontSize: 40,
@@ -80,14 +137,14 @@ const styles = StyleSheet.create({
   },
   gameTitle: {
     fontSize: 18,
-    fontWeight: 'bold',
-    color: 'white',
+    fontWeight: "bold",
+    color: "white",
     marginBottom: 5,
-    textAlign: 'center',
+    textAlign: "center",
   },
   gameDescription: {
     fontSize: 12,
-    color: 'rgba(255,255,255,0.8)',
-    textAlign: 'center',
+    color: "rgba(255,255,255,0.8)",
+    textAlign: "center",
   },
 });
