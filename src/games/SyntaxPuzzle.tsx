@@ -1,12 +1,13 @@
+import { useState } from "react";
 import {
-  View,
+  Alert,
+  Modal,
+  ScrollView,
   StyleSheet,
   TextInput,
   TouchableOpacity,
-  Alert,
-  ScrollView,
+  View,
 } from "react-native";
-import { useState } from "react";
 import { AppText } from "../components/AppText";
 import { Colors } from "../constants/colors";
 
@@ -20,6 +21,7 @@ console.log(i)`,
 export default function SyntaxPuzzle() {
   const [code, setCode] = useState(syntaxPuzzleLevel.codeWithBugs);
   const [output, setOutput] = useState("");
+  const [showInstructions, setShowInstructions] = useState(true); // 2. State for popup
 
   const runPuzzle = () => {
     let outputStr = "";
@@ -40,10 +42,7 @@ export default function SyntaxPuzzle() {
 
       setOutput(outputStr.trim());
     } catch (err) {
-      Alert.alert(
-        "🐞 Syntax Error!",
-        "Fix the code syntax and try again."
-      );
+      Alert.alert("🐞 Syntax Error!", "Fix the code syntax and try again.");
       setOutput("");
     } finally {
       console.log = originalLog;
@@ -61,6 +60,42 @@ export default function SyntaxPuzzle() {
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
+      {/* 👇 Instructions Modal Popup */}
+      <Modal visible={showInstructions} transparent={true} animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <AppText style={styles.modalTitle}>Mission: Syntax Fix 🧩</AppText>
+
+            <View style={styles.rulesList}>
+              <AppText style={styles.ruleItem}>
+                1. The code in the box has "Syntax Errors" (it's written
+                incorrectly).
+              </AppText>
+              <AppText style={styles.ruleItem}>
+                2. Your goal is to fix the code so it counts from 1 to 5.
+              </AppText>
+              <AppText style={styles.ruleItem}>
+                3. Use proper JavaScript syntax: 'let', curly brackets {}, and
+                semicolons ;
+              </AppText>
+              <AppText style={styles.ruleItem}>
+                4. Tap "Run Code" to test your logic.
+              </AppText>
+              <AppText style={styles.ruleItem}>
+                5. Use the "Hint" if you get stuck!
+              </AppText>
+            </View>
+
+            <TouchableOpacity
+              style={styles.modalButton}
+              onPress={() => setShowInstructions(false)}
+            >
+              <AppText style={styles.buttonText}>Enter Puzzle 🚀</AppText>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
       <AppText style={styles.title}>Syntax Puzzle 🧩</AppText>
       <AppText style={styles.subtitle}>
         Fix the code syntax so it prints numbers from 1 to 5
@@ -119,6 +154,44 @@ const styles = StyleSheet.create({
     color: "#666",
     marginBottom: 15,
   },
+  // --- Modal Styles ---
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.8)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
+  modalContent: {
+    backgroundColor: "white",
+    borderRadius: 20,
+    padding: 25,
+    width: "100%",
+    elevation: 5,
+  },
+  modalTitle: {
+    fontSize: 22,
+    fontWeight: "bold",
+    textAlign: "center",
+    marginBottom: 15,
+    color: Colors.primary,
+  },
+  rulesList: {
+    marginBottom: 20,
+  },
+  ruleItem: {
+    fontSize: 15,
+    marginBottom: 10,
+    lineHeight: 22,
+    color: "#333",
+  },
+  modalButton: {
+    backgroundColor: Colors.primary,
+    padding: 15,
+    borderRadius: 12,
+    alignItems: "center",
+  },
+  // --- Game Editor Styles ---
   editorContainer: {
     backgroundColor: "#111",
     borderRadius: 12,

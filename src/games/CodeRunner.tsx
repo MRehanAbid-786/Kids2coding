@@ -1,14 +1,23 @@
-import { View, StyleSheet, TextInput, TouchableOpacity, Alert, ScrollView } from "react-native";
-import { useState } from "react";
 import * as Clipboard from "expo-clipboard";
+import { useState } from "react";
+import {
+  Alert,
+  Modal,
+  ScrollView,
+  StyleSheet,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from "react-native"; // 1. Added Modal
 import { AppText } from "../components/AppText";
 import { Colors } from "../constants/colors";
 
 export default function CodeRunner() {
   const [code, setCode] = useState(
-    "for (let i = 1; i <= 5; i++) {\n  console.log(i);\n}"
+    "for (let i = 1; i <= 5; i++) {\n  console.log(i);\n}",
   );
   const [output, setOutput] = useState("");
+  const [showRules, setShowRules] = useState(true); // 2. State to control the popup
 
   const runCode = () => {
     let outputStr = "";
@@ -42,9 +51,46 @@ export default function CodeRunner() {
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
+      {/* 👇 Instructions Modal */}
+      <Modal visible={showRules} transparent={true} animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <AppText style={styles.modalTitle}>How to Play 💡</AppText>
+
+            <View style={styles.rulesList}>
+              <AppText style={styles.ruleItem}>
+                1. Write your JavaScript code in the dark editor box.
+              </AppText>
+              <AppText style={styles.ruleItem}>
+                2. Use{" "}
+                <AppText style={{ fontWeight: "bold" }}>console.log()</AppText>{" "}
+                to see results in the output box.
+              </AppText>
+              <AppText style={styles.ruleItem}>
+                3. Press "Run Code" to execute your logic.
+              </AppText>
+              <AppText style={styles.ruleItem}>
+                4. If there is an error in your code, an alert will tell you
+                what's wrong.
+              </AppText>
+              <AppText style={styles.ruleItem}>
+                5. You can copy the output to your clipboard once finished!
+              </AppText>
+            </View>
+
+            <TouchableOpacity
+              style={styles.modalButton}
+              onPress={() => setShowRules(false)}
+            >
+              <AppText style={styles.buttonText}>Got it! Let's Go 🚀</AppText>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
       <AppText style={styles.title}>Code Runner 🏃</AppText>
 
-      {/* 👇 Editor with Line Numbers */}
+      {/* Editor with Line Numbers */}
       <View style={styles.editorContainer}>
         <View style={styles.lineNumbers}>
           {lineNumbers.map((num) => (
@@ -92,6 +138,44 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     marginBottom: 20,
   },
+  // --- Modal Styles ---
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.7)", // Dim background
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
+  modalContent: {
+    backgroundColor: "white",
+    borderRadius: 20,
+    padding: 25,
+    width: "100%",
+    elevation: 5,
+  },
+  modalTitle: {
+    fontSize: 22,
+    fontWeight: "bold",
+    textAlign: "center",
+    marginBottom: 15,
+    color: Colors.primary,
+  },
+  rulesList: {
+    marginBottom: 20,
+  },
+  ruleItem: {
+    fontSize: 15,
+    marginBottom: 10,
+    lineHeight: 22,
+    color: "#333",
+  },
+  modalButton: {
+    backgroundColor: Colors.primary,
+    padding: 15,
+    borderRadius: 12,
+    alignItems: "center",
+  },
+  // --- Code Editor Styles ---
   editorContainer: {
     flexDirection: "row",
     backgroundColor: "#111",
@@ -109,7 +193,6 @@ const styles = StyleSheet.create({
     fontFamily: "monospace",
     lineHeight: 22,
   },
-
   codeBox: {
     flex: 1,
     color: "#dbddde",
@@ -118,7 +201,6 @@ const styles = StyleSheet.create({
     fontFamily: "monospace",
     lineHeight: 22,
   },
-
   button: {
     backgroundColor: Colors.primary,
     padding: 15,

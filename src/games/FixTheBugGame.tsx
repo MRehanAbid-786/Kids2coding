@@ -1,14 +1,16 @@
+import { useState } from "react";
 import {
-  View,
+  Alert,
+  Modal,
+  ScrollView,
   StyleSheet,
   TextInput,
   TouchableOpacity,
-  Alert,
-  ScrollView,
+  View,
 } from "react-native";
-import { useState } from "react";
 import { AppText } from "../components/AppText";
 import { Colors } from "../constants/colors";
+
 const bugLevel = {
   buggyCode: `for(let i=1 i<=5 i++){
   console.log(i)
@@ -20,6 +22,7 @@ const bugLevel = {
 export default function FixTheBugGame() {
   const [code, setCode] = useState(bugLevel.buggyCode);
   const [output, setOutput] = useState("");
+  const [showRules, setShowRules] = useState(true); // 2. State for instructions
 
   const runBugFix = () => {
     let outputStr = "";
@@ -58,6 +61,42 @@ export default function FixTheBugGame() {
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
+      {/* 👇 Instructions Modal Popup */}
+      <Modal visible={showRules} transparent={true} animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <AppText style={styles.modalTitle}>Mission: Fix the Bug 🐞</AppText>
+
+            <View style={styles.rulesList}>
+              <AppText style={styles.ruleItem}>
+                1. There is a "Bug" (error) in the code below.
+              </AppText>
+              <AppText style={styles.ruleItem}>
+                2. Read the subtitle to know what the code is *supposed* to do.
+              </AppText>
+              <AppText style={styles.ruleItem}>
+                3. Edit the code in the box to fix the syntax or logic errors.
+              </AppText>
+              <AppText style={styles.ruleItem}>
+                4. Press "Run Code" to test your fix.
+              </AppText>
+              <AppText style={styles.ruleItem}>
+                5. Stuck? Use the "Hint" button for help!
+              </AppText>
+            </View>
+
+            <TouchableOpacity
+              style={styles.modalButton}
+              onPress={() => setShowRules(false)}
+            >
+              <AppText style={styles.buttonText}>
+                I'm Ready to Debug! 🛠️
+              </AppText>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
       <AppText style={styles.title}>Fix the Bug 🐞</AppText>
 
       <AppText style={styles.subtitle}>
@@ -110,13 +149,51 @@ const styles = StyleSheet.create({
     paddingTop: 30,
     fontSize: 26,
     fontWeight: "bold",
-    paddingBottom:10,
+    paddingBottom: 10,
   },
   subtitle: {
     fontSize: 14,
     color: "#666",
     marginBottom: 15,
   },
+  // --- Modal Styles ---
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.8)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
+  modalContent: {
+    backgroundColor: "white",
+    borderRadius: 20,
+    padding: 25,
+    width: "100%",
+    elevation: 10,
+  },
+  modalTitle: {
+    fontSize: 22,
+    fontWeight: "bold",
+    textAlign: "center",
+    marginBottom: 20,
+    color: "#E91E63", // Bug color
+  },
+  rulesList: {
+    marginBottom: 25,
+  },
+  ruleItem: {
+    fontSize: 15,
+    marginBottom: 12,
+    lineHeight: 22,
+    color: "#333",
+  },
+  modalButton: {
+    backgroundColor: "#E91E63",
+    padding: 16,
+    borderRadius: 12,
+    alignItems: "center",
+  },
+  // --- Editor Styles ---
   editorContainer: {
     backgroundColor: "#111",
     borderRadius: 12,
