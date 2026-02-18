@@ -16,16 +16,15 @@ import {
 import { AppButton } from "../src/components/AppButton";
 import { AppText } from "../src/components/AppText";
 import { Colors } from "../src/constants/colors";
-
-// --- CONFIG ---
-const API_KEY = "AIzaSyDs5CfZJPabJH8AyC5x0hg-ra3Ula1Ucso";
-const BASE_AUTH_URL = "https://identitytoolkit.googleapis.com/v1/accounts";
+import { useAuth } from "../src/hooks/useAuth"; // 👈 Use the hook
 
 export default function HomeScreen() {
   const router = useRouter();
   const { width, height } = useWindowDimensions();
-
   const cardWidth = width > 768 ? 450 : width * 0.9;
+
+  // -------- USE AUTH HOOK --------
+  const { login, signup, resetPassword, loading: authLoading, isAuthenticated } = useAuth();
 
   // -------- STATE --------
   const [email, setEmail] = useState("");
@@ -60,67 +59,37 @@ export default function HomeScreen() {
     setMessage({ text: "", type: "" });
   }, [isLoginMode, isResetMode]);
 
-  // -------- ERROR HANDLER --------
-  const getFriendlyError = (code: string) => {
-    const errors: Record<string, string> = {
-      EMAIL_EXISTS: "Email already exists",
-      INVALID_PASSWORD: "Wrong password",
-      EMAIL_NOT_FOUND: "This email is not registered 🔍", // Updated
-      WEAK_PASSWORD: "Password too weak",
-      INVALID_EMAIL: "Invalid email address format",
-      NETWORK_ERROR: "Network issue, try again",
-      PROFILE_UPDATE_FAILED: "Profile update failed",
-      TOO_MANY_ATTEMPTS_TRY_LATER: "Too many attempts. Try later",
-      USER_DISABLED: "This account has been disabled",
-      MISSING_EMAIL: "Please enter an email address",
-    };
-    return errors[code] ?? "An unexpected error occurred. Please try again.";
-  };
-
-  const fetchWithTimeout = async (
-    url: string,
-    options: RequestInit,
-    timeout = 10000,
-  ) => {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeout);
-    try {
-      const res = await fetch(url, { ...options, signal: controller.signal });
-      clearTimeout(timer);
-      return res;
-    } catch {
-      clearTimeout(timer);
-      throw new Error("NETWORK_ERROR");
+  // Redirect if already logged in
+  useEffect(() => {
+    if (isAuthenticated && !submitting) {
+      console.log("✅ User authenticated, redirecting to dashboard");
+      router.replace("/dashboard");
     }
-  };
+  }, [isAuthenticated, submitting]);
 
-  // -------- HANDLERS --------
+  // -------- HANDLERS USING SDK --------
   const handleLogin = async () => {
     if (!email.trim() || !password) {
       setMessage({ text: "Enter email and password", type: "error" });
       return;
     }
+
     setSubmitting(true);
+    setMessage({ text: "", type: "" });
+
     try {
-      const res = await fetchWithTimeout(
-        `${BASE_AUTH_URL}:signInWithPassword?key=${API_KEY}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            email: email.trim(),
-            password,
-            returnSecureToken: true,
-          }),
-        },
-      );
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error?.message);
+      const result = await login(email.trim(), password);
+      
+      if (result.success) {
+        setMessage({ text: "Login successful! Redirecting...", type: "success" });
+        // Navigation will happen via the useEffect above
+      } else {
+        setMessage({ text: result.error || "Login failed", type: "error" });
+        setSubmitting(false);
+      }
+    } catch (error: any) {
+      setMessage({ text: error.message || "Login failed", type: "error" });
       setSubmitting(false);
-      router.replace("/dashboard");
-    } catch (e: any) {
-      setSubmitting(false);
-      setMessage({ text: getFriendlyError(e.message), type: "error" });
     }
   };
 
@@ -129,85 +98,59 @@ export default function HomeScreen() {
       setMessage({ text: "Fill all fields", type: "error" });
       return;
     }
+
     if (password !== confirmPassword) {
       setMessage({ text: "Passwords do not match", type: "error" });
       return;
     }
+
     setSubmitting(true);
+    setMessage({ text: "", type: "" });
+
     try {
-      const res = await fetchWithTimeout(
-        `${BASE_AUTH_URL}:signUp?key=${API_KEY}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            email: email.trim(),
-            password,
-            returnSecureToken: true,
-          }),
-        },
-      );
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error?.message);
-      const updateRes = await fetch(`${BASE_AUTH_URL}:update?key=${API_KEY}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          idToken: data.idToken,
-          displayName: displayName.trim(),
-          returnSecureToken: true,
-        }),
-      });
-      if (!updateRes.ok) throw new Error("PROFILE_UPDATE_FAILED");
-      setMessage({ text: "Account created! Please login 👇", type: "success" });
-      setIsLoginMode(true);
+      const result = await signup(email.trim(), password, displayName.trim());
+      
+      if (result.success) {
+        setMessage({
+          text: "Account created! Logging you in...",
+          type: "success",
+        });
+        // User will be automatically logged in and redirected
+      } else {
+        setMessage({ text: result.error || "Signup failed", type: "error" });
+        setSubmitting(false);
+      }
+    } catch (error: any) {
+      setMessage({ text: error.message || "Signup failed", type: "error" });
       setSubmitting(false);
-    } catch (e: any) {
-      setSubmitting(false);
-      setMessage({ text: getFriendlyError(e.message), type: "error" });
     }
   };
 
   const handleResetPassword = async () => {
     if (!email.trim()) {
-      setMessage({ text: "Please enter your email first", type: "error" });
+      setMessage({ text: "Please enter your email", type: "error" });
       return;
     }
+
     setSubmitting(true);
-    setMessage({ text: "", type: "" }); // Clear previous messages
+    setMessage({ text: "", type: "" });
 
     try {
-      const res = await fetchWithTimeout(
-        `${BASE_AUTH_URL}:sendOobCode?key=${API_KEY}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            requestType: "PASSWORD_RESET",
-            email: email.trim(),
-          }),
-        },
-      );
-      const data = await res.json();
-
-      if (!res.ok) {
-        // If Firebase returns an error (like EMAIL_NOT_FOUND)
-        throw new Error(data.error?.message);
+      const result = await resetPassword(email.trim());
+      
+      if (result.success) {
+        setMessage({
+          text: "Reset link sent! Check your inbox 📧",
+          type: "success",
+        });
+        setTimeout(() => setIsResetMode(false), 3000);
+      } else {
+        setMessage({ text: result.error || "Failed to send reset link", type: "error" });
       }
-
-      // Success logic
-      setMessage({
-        text: "Reset link sent! Check your inbox 📧",
-        type: "success",
-      });
       setSubmitting(false);
-
-      // Optional: Wait 3 seconds then go back to login automatically
-      setTimeout(() => setIsResetMode(false), 3000);
-    } catch (e: any) {
+    } catch (error: any) {
+      setMessage({ text: error.message || "Failed to send reset link", type: "error" });
       setSubmitting(false);
-      // This will show "This email is not registered 🔍" if it's EMAIL_NOT_FOUND
-      setMessage({ text: getFriendlyError(e.message), type: "error" });
     }
   };
 
