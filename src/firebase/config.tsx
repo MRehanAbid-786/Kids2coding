@@ -2,15 +2,14 @@ import { getApp, getApps, initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { getDatabase } from 'firebase/database';
 
-// Your Firebase configuration
 const firebaseConfig = {
-  apiKey: "AIzaSyDs5CfZJPabJH8AyC5x0hg-ra3Ula1Ucso",
-  authDomain: "ids2coding.firebaseapp.com",
-  projectId: "ids2coding",
-  databaseURL: "https://ids2coding-default-rtdb.firebaseio.com/",
-  storageBucket: "ids2coding.appspot.com", // Fixed: should match project ID
-  messagingSenderId: "123456789",
-  appId: "1:123456789:web:123456789"
+  apiKey: "AIzaSyCQBF47kQr2hVxKv5kXSevAqueb8cwHqGI",
+  authDomain: "cosmicflow-gby1b.firebaseapp.com",
+  databaseURL: "https://cosmicflow-gby1b-default-rtdb.firebaseio.com",
+  projectId: "cosmicflow-gby1b",
+  storageBucket: "cosmicflow-gby1b.firebasestorage.app",
+  messagingSenderId: "25616866316",
+  appId: "1:25616866316:web:da37f68eaf1c8cad5ee229"
 };
 
 // Initialize Firebase only if it hasn't been initialized yet
@@ -49,5 +48,10 @@ console.log('🔥 Firebase initialized:', {
   database: !!database,
   projectId: firebaseConfig.projectId
 });
+
+
+console.log('🔥 Firebase connected to project:', firebaseConfig.projectId);
+console.log('🔥 Database URL:', firebaseConfig.databaseURL);
+
 
 export default app;

@@ -16,10 +16,11 @@ import { CourseCard } from "../src/components/CourseCard";
 import { ProgressCard } from "../src/components/ProgressCard";
 import { ScreenWrapper } from "../src/components/ScreenWrapper";
 import { Colors } from "../src/constants/colors";
-import { coursesData } from "../src/data/coursesData";
+// Remove this: import { coursesData } from "../src/data/coursesData";
 import { database } from "../src/firebase/config";
 import { useAuth } from "../src/hooks/useAuth";
 import { useProgress } from "../src/hooks/useProgress";
+import { getCourses } from "../src/services/coursesService"; // 👈 Import the service
 
 import FontAwesome from "@expo/vector-icons/FontAwesome";
 import Ionicons from "@expo/vector-icons/Ionicons";
@@ -31,6 +32,10 @@ export default function DashboardScreen() {
   const router = useRouter();
   const { user, loading: authLoading, logout } = useAuth();
   const { progress, getCourseProgress, getUserLevel, getLevelProgress, loading: progressLoading } = useProgress();
+  
+  // State for courses from Firebase
+  const [courses, setCourses] = useState([]);
+  const [coursesLoading, setCoursesLoading] = useState(true);
 
   const [userData, setUserData] = useState({
     coursesCount: 0,
@@ -45,6 +50,23 @@ export default function DashboardScreen() {
   // Get user level from progress hook
   const userLevel = getUserLevel();
   const levelProgress = getLevelProgress();
+
+  // --- FETCH COURSES FROM FIREBASE ---
+  useEffect(() => {
+    const fetchCourses = async () => {
+      try {
+        setCoursesLoading(true);
+        const coursesData = await getCourses();
+        setCourses(coursesData);
+      } catch (error) {
+        console.error("Error fetching courses:", error);
+      } finally {
+        setCoursesLoading(false);
+      }
+    };
+
+    fetchCourses();
+  }, []);
 
   // --- LOGOUT HANDLER ---
   const handleLogout = async () => {
@@ -98,10 +120,11 @@ export default function DashboardScreen() {
     return userData.displayName.split(" ")[0];
   };
 
-  if (authLoading || dbLoading || progressLoading) {
+  if (authLoading || dbLoading || progressLoading || coursesLoading) {
     return (
       <View style={styles.loadingFull}>
         <ActivityIndicator size="large" color={Colors.primary} />
+        <AppText style={styles.loadingText}>Loading your dashboard...</AppText>
       </View>
     );
   }
@@ -226,24 +249,35 @@ export default function DashboardScreen() {
                 <AppText style={styles.seeAll}>See All →</AppText>
               </TouchableOpacity>
             </View>
-            <View style={styles.coursesGrid}>
-              {coursesData.slice(0, 4).map((course) => {
-                // Calculate progress for this course
-                const courseProgress = getCourseProgress(course.id, course.lessons || 10);
-                
-                return (
-                  <CourseCard
-                    key={course.id}
-                    course={{
-                      ...course,
-                      progress: courseProgress, // This will show in your card!
-                    }}
-                    onPress={() => router.push(`/courses/${course.id}`)}
-                    style={styles.courseCard}
-                  />
-                );
-              })}
-            </View>
+            
+            {courses.length === 0 ? (
+              <View style={styles.emptyContainer}>
+                <AppText style={styles.emptyEmoji}>📚</AppText>
+                <AppText style={styles.emptyTitle}>No Courses Yet</AppText>
+                <AppText style={styles.emptyText}>
+                  Check back soon for new learning adventures!
+                </AppText>
+              </View>
+            ) : (
+              <View style={styles.coursesGrid}>
+                {courses.slice(0, 4).map((course) => {
+                  // Calculate progress for this course
+                  const courseProgress = getCourseProgress(course.id, course.lessonsCount || 10);
+                  
+                  return (
+                    <CourseCard
+                      key={course.id}
+                      course={{
+                        ...course,
+                        progress: courseProgress,
+                      }}
+                      onPress={() => router.push(`/courses/${course.id}`)}
+                      style={styles.courseCard}
+                    />
+                  );
+                })}
+              </View>
+            )}
           </View>
         </View>
       </Animated.ScrollView>
@@ -252,8 +286,16 @@ export default function DashboardScreen() {
 }
 
 const styles = StyleSheet.create({
-  loadingFull: { flex: 1, justifyContent: "center", alignItems: "center" },
-
+  loadingFull: { 
+    flex: 1, 
+    justifyContent: "center", 
+    alignItems: "center",
+    backgroundColor: Colors.background,
+  },
+  loadingText: {
+    marginTop: 10,
+    color: Colors.textLight,
+  },
   header: { overflow: "hidden" },
   headerBackground: { flex: 1 },
   headerDarken: {
@@ -307,18 +349,61 @@ const styles = StyleSheet.create({
   },
   courseCard: { width: (width - 50) / 2, marginBottom: 15 },
 
-  // --- PROFILE & LOGOUT ICONS MOBILE FRIENDLY ---
   headerActions: {
-    flexDirection: "row",       // icons side by side
-    alignItems: "center",       // vertical center
-    justifyContent: "flex-end", // right side of header
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "flex-end",
   },
   profileButton: {
-    padding: 5,                 // touch area friendly
+    padding: 5,
   },
   logoutButton: {
-    padding: 5,                 // touch area friendly
-    marginLeft: 15,             // spacing between profile & logout
+    padding: 5,
+    marginLeft: 15,
+  },
+  levelBadge: {
+    backgroundColor: "rgba(255,255,255,0.2)",
+    borderRadius: 20,
+    padding: 8,
+    marginBottom: 10,
+    alignSelf: "flex-start",
+  },
+  levelBadgeText: {
+    color: "white",
+    fontWeight: "bold",
+  },
+  levelProgressBar: {
+    height: 4,
+    backgroundColor: "rgba(255,255,255,0.3)",
+    borderRadius: 2,
+    marginTop: 4,
+  },
+  levelProgressFill: {
+    height: "100%",
+    backgroundColor: "white",
+    borderRadius: 2,
+  },
+  emptyContainer: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 40,
+    backgroundColor: Colors.surface,
+    borderRadius: 20,
+  },
+  emptyEmoji: {
+    fontSize: 48,
+    marginBottom: 15,
+  },
+  emptyTitle: {
+    fontSize: 20,
+    fontWeight: "bold",
+    color: Colors.text,
+    marginBottom: 10,
+  },
+  emptyText: {
+    fontSize: 16,
+    color: Colors.textLight,
+    textAlign: "center",
+    maxWidth: 250,
   },
 });
-

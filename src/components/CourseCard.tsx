@@ -38,6 +38,7 @@ export const CourseCard: React.FC<CourseCardProps> = ({
   style,
   horizontal = false,
 }) => {
+  console.log(`🎴 CourseCard received: ${course.title}, lessons: ${course.lessons}, progress: ${course.progress}, bgColor: ${course.bgColor}`);
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const rotateAnim = useRef(new Animated.Value(0)).current;
 

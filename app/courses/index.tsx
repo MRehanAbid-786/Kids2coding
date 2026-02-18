@@ -15,9 +15,13 @@ import { CourseCard } from "../../src/components/CourseCard";
 import { ScreenWrapper } from "../../src/components/ScreenWrapper";
 import { Colors } from "../../src/constants/colors";
 import { getCourses } from "../../src/services/coursesService";
+import { useProgress } from "../../src/hooks/useProgress";
+import { database } from "../../src/firebase/config"; // 👈 IMPORTANT: add this import
+import { get, ref } from "firebase/database"; // for root check
 
 export default function CoursesScreen() {
   const router = useRouter();
+  const { getCourseProgress } = useProgress();
   const [searchQuery, setSearchQuery] = useState('');
   const [viewMode, setViewMode] = useState('grid');
   const [selectedCategory, setSelectedCategory] = useState('all');
@@ -34,16 +38,75 @@ export default function CoursesScreen() {
     { id: 'projects', label: 'Projects', emoji: '🏗️' },
   ];
 
-  // Load courses from Firebase
   const loadCourses = useCallback(async () => {
+    console.log("🔍 [loadCourses] Starting to fetch courses...");
+    console.log("🔍 [loadCourses] database object:", database ? "exists" : "undefined");
+    
     try {
+      // Test 1: Check database initialization
+      if (!database) {
+        console.error("❌ [loadCourses] database is undefined!");
+        return;
+      }
+      console.log("✅ [loadCourses] database is initialized");
+
+      // Test 2: Fetch courses via service
       const coursesData = await getCourses();
+      console.log("📊 [loadCourses] getCourses() returned:", coursesData);
+      console.log("📊 [loadCourses] Number of courses:", coursesData.length);
+      
+      if (coursesData.length > 0) {
+        console.log("📘 [loadCourses] First course sample:", JSON.stringify(coursesData[0], null, 2));
+        // Check if the course has required fields
+        const sample = coursesData[0];
+        console.log("   - id:", sample.id);
+        console.log("   - title:", sample.title);
+        console.log("   - level:", sample.level);
+        console.log("   - tags:", sample.tags);
+        console.log("   - lessonsCount:", sample.lessonsCount);
+        console.log("   - color:", sample.color);
+        console.log("   - bgColor:", sample.bgColor);
+      } else {
+        console.warn("⚠️ [loadCourses] No courses returned from getCourses()");
+        
+        // Test 3: Direct root check
+        try {
+          console.log("🔍 [loadCourses] Checking root database...");
+          const rootRef = ref(database, '/');
+          const rootSnap = await get(rootRef);
+          if (rootSnap.exists()) {
+            const rootKeys = Object.keys(rootSnap.val());
+            console.log("📁 [loadCourses] Root keys:", rootKeys);
+            if (rootKeys.includes('courses')) {
+              console.log("✅ [loadCourses] 'courses' node found at root");
+              // Check inside courses
+              const coursesRef = ref(database, 'courses');
+              const coursesSnap = await get(coursesRef);
+              if (coursesSnap.exists()) {
+                const coursesObj = coursesSnap.val();
+                console.log("📦 [loadCourses] Courses node data:", coursesObj);
+                console.log("🔑 [loadCourses] Courses keys:", Object.keys(coursesObj));
+              } else {
+                console.log("❌ [loadCourses] 'courses' node is empty");
+              }
+            } else {
+              console.log("❌ [loadCourses] 'courses' node NOT found. Available roots:", rootKeys);
+            }
+          } else {
+            console.log("❌ [loadCourses] Database is completely empty");
+          }
+        } catch (rootErr) {
+          console.error("❌ [loadCourses] Error checking root:", rootErr);
+        }
+      }
+      
       setCourses(coursesData);
     } catch (error) {
-      console.error("Error loading courses:", error);
+      console.error("❌ [loadCourses] Error:", error);
     } finally {
       setLoading(false);
       setRefreshing(false);
+      console.log("🏁 [loadCourses] Finished. loading set to false");
     }
   }, []);
 
@@ -56,19 +119,41 @@ export default function CoursesScreen() {
     loadCourses();
   }, [loadCourses]);
 
-  // Filter courses
+  // Filter courses with detailed logging
   const filteredCourses = courses.filter(course => {
+    console.log("🔎 [filter] Checking course:", course.title);
+    console.log("   - searchQuery:", searchQuery);
+    console.log("   - selectedCategory:", selectedCategory);
+    
     const matchesSearch = searchQuery === '' || 
       course.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      course.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      course.description?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       (course.tags && course.tags.some(tag => tag.toLowerCase().includes(searchQuery.toLowerCase())));
     
-    const matchesCategory = selectedCategory === 'all' || 
-      (course.level && course.level.toLowerCase().includes(selectedCategory)) ||
-      (course.tags && course.tags.some(tag => tag.toLowerCase().includes(selectedCategory)));
+    console.log("   - matchesSearch:", matchesSearch);
+
+    // Fixed: treat 'all' specially, otherwise exact match on level or tags
+    let matchesCategory = false;
+    if (selectedCategory === 'all') {
+      matchesCategory = true;
+      console.log("   - selectedCategory is 'all', automatically true");
+    } else {
+      // Try exact match on level first
+      const levelMatch = course.level && course.level.toLowerCase() === selectedCategory;
+      const tagMatch = course.tags && course.tags.some(tag => tag.toLowerCase() === selectedCategory);
+      matchesCategory = levelMatch || tagMatch;
+      console.log("   - levelMatch:", levelMatch);
+      console.log("   - tagMatch:", tagMatch);
+    }
+    console.log("   - matchesCategory:", matchesCategory);
     
-    return matchesSearch && matchesCategory;
+    const result = matchesSearch && matchesCategory;
+    console.log("   - INCLUDED:", result);
+    return result;
   });
+
+  console.log("📋 [render] courses.length:", courses.length);
+  console.log("📋 [render] filteredCourses.length:", filteredCourses.length);
 
   // Loading state
   if (loading) {
@@ -160,32 +245,54 @@ export default function CoursesScreen() {
             <AppText style={styles.emptyText}>
               {courses.length === 0 
                 ? "No courses available yet. Check back soon!"
-                : "Try a different search or browse all courses"
-              }
+                : "Try a different search or browse all courses"}
             </AppText>
           </View>
         ) : viewMode === 'grid' ? (
           <View style={styles.grid}>
-            {filteredCourses.map((course) => (
-              <CourseCard
-                key={course.id}
-                course={course}
-                onPress={() => router.push(`/courses/${course.id}`)}
-                style={styles.gridCard}
-              />
-            ))}
+            {filteredCourses.map((course) => {
+              // Calculate progress for this course
+              const courseProgress = getCourseProgress(course.id, course.lessonsCount || 10);
+              console.log(`🃏 Rendering CourseCard for ${course.title} with progress ${courseProgress}`);
+              
+              // Map fields to what CourseCard expects
+              const cardCourse = {
+                ...course,
+                lessons: course.lessonsCount || 0,      // map lessonsCount to lessons
+                bgColor: course.bgColor || '#F3F4F6',   // provide default
+                progress: courseProgress,
+              };
+              
+              return (
+                <CourseCard
+                  key={course.id}
+                  course={cardCourse}
+                  onPress={() => router.push(`/courses/${course.id}`)}
+                  style={styles.gridCard}
+                />
+              );
+            })}
           </View>
         ) : (
           <View style={styles.list}>
-            {filteredCourses.map((course) => (
-              <CourseCard
-                key={course.id}
-                course={course}
-                onPress={() => router.push(`/courses/${course.id}`)}
-                style={styles.listCard}
-                horizontal
-              />
-            ))}
+            {filteredCourses.map((course) => {
+              const courseProgress = getCourseProgress(course.id, course.lessonsCount || 10);
+              const cardCourse = {
+                ...course,
+                lessons: course.lessonsCount || 0,
+                bgColor: course.bgColor || '#F3F4F6',
+                progress: courseProgress,
+              };
+              return (
+                <CourseCard
+                  key={course.id}
+                  course={cardCourse}
+                  onPress={() => router.push(`/courses/${course.id}`)}
+                  style={styles.listCard}
+                  horizontal
+                />
+              );
+            })}
           </View>
         )}
       </ScrollView>
@@ -194,6 +301,7 @@ export default function CoursesScreen() {
 }
 
 const styles = StyleSheet.create({
+  // ... keep all existing styles
   header: {
     paddingHorizontal: 20,
     paddingTop: 20,

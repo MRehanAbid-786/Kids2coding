@@ -1,55 +1,91 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { View, StyleSheet, ScrollView, TouchableOpacity, Alert } from "react-native";
+import { View, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator } from "react-native";
 import { AppText } from "../../../../src/components/AppText";
 import { ScreenWrapper } from "../../../../src/components/ScreenWrapper";
 import { Colors } from "../../../../src/constants/colors";
-import { coursesData, courseDetails } from "../../../../src/data/coursesData";
-import { ChevronLeft, ChevronRight, Clock, HelpCircle } from "lucide-react-native";
-import { useState } from "react";
+import { ChevronLeft, ChevronRight, Clock, HelpCircle, CheckCircle } from "lucide-react-native";
+import { useState, useEffect } from "react";
+import { useProgress } from "../../../../src/hooks/useProgress";
+import { getCourseById } from "../../../../src/services/coursesService";
 
 export default function QuizScreen() {
   const { courseId, quizId } = useLocalSearchParams();
   const router = useRouter();
+  const { saveQuizResult, getQuizScore } = useProgress();
 
+  const [course, setCourse] = useState<any>(null);
+  const [quiz, setQuiz] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
   const [currentQuestion, setCurrentQuestion] = useState(0);
   const [selectedAnswers, setSelectedAnswers] = useState<number[]>([]);
+  const [quizCompleted, setQuizCompleted] = useState(false);
+  const [existingScore, setExistingScore] = useState<any>(null);
   const [timeLeft, setTimeLeft] = useState(600); // 10 minutes in seconds
 
-  const course = coursesData.find(c => c.id === courseId);
-  const details = courseDetails[courseId as string];
-  const quiz = details?.quizzes?.find(q => q.id === quizId);
+  useEffect(() => {
+    fetchCourseData();
+  }, [courseId]);
 
-  // Mock questions for the quiz
-  const questions = [
-    {
-      id: 1,
-      question: "What does HTML stand for?",
-      options: [
-        "Hyper Text Markup Language",
-        "High Tech Modern Language",
-        "Hyper Transfer Markup Language",
-        "Home Tool Markup Language"
-      ],
-      correctAnswer: 0,
-    },
-    {
-      id: 2,
-      question: "Which tag is used to create a hyperlink?",
-      options: ["<link>", "<a>", "<href>", "<url>"],
-      correctAnswer: 1,
-    },
-    {
-      id: 3,
-      question: "What is the correct way to comment in HTML?",
-      options: [
-        "// This is a comment",
-        "<!-- This is a comment -->",
-        "/* This is a comment */",
-        "# This is a comment"
-      ],
-      correctAnswer: 1,
-    },
-  ];
+  useEffect(() => {
+    if (courseId && quizId) {
+      const score = getQuizScore(courseId as string, quizId as string);
+      if (score) {
+        setExistingScore(score);
+        setQuizCompleted(true);
+      }
+    }
+  }, [courseId, quizId, getQuizScore]);
+
+  // Timer effect
+  useEffect(() => {
+    if (!quizCompleted && timeLeft > 0) {
+      const timer = setInterval(() => {
+        setTimeLeft(prev => {
+          if (prev <= 1) {
+            clearInterval(timer);
+            handleTimeOut();
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+      return () => clearInterval(timer);
+    }
+  }, [timeLeft, quizCompleted]);
+
+  const fetchCourseData = async () => {
+    try {
+      setLoading(true);
+      const courseData = await getCourseById(courseId as string);
+      setCourse(courseData);
+      
+      if (courseData?.quizzes) {
+        // Convert quizzes object to array and find the matching quiz
+        const quizzesArray = Object.keys(courseData.quizzes).map(key => ({
+          id: key,
+          ...courseData.quizzes[key]
+        }));
+        const foundQuiz = quizzesArray.find(q => q.id === quizId);
+        setQuiz(foundQuiz);
+        
+        if (foundQuiz?.questions) {
+          setSelectedAnswers(new Array(foundQuiz.questions.length).fill(-1));
+        }
+      }
+    } catch (error) {
+      console.error("Error fetching course:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleTimeOut = () => {
+    Alert.alert(
+      "Time's Up! ⏰",
+      "The quiz time has expired. Your answers will be submitted automatically.",
+      [{ text: "OK", onPress: handleSubmit }]
+    );
+  };
 
   const handleAnswerSelect = (answerIndex: number) => {
     const newAnswers = [...selectedAnswers];
@@ -64,22 +100,39 @@ export default function QuizScreen() {
   };
 
   const handleNext = () => {
-    if (currentQuestion < questions.length - 1) {
+    if (currentQuestion < (quiz?.questions?.length || 0) - 1) {
       setCurrentQuestion(currentQuestion + 1);
     }
   };
 
   const handleSubmit = () => {
-    let score = 0;
-    questions.forEach((q, index) => {
-      if (selectedAnswers[index] === q.correctAnswer) {
-        score++;
+    // Check if all questions answered
+    if (selectedAnswers.includes(-1)) {
+      Alert.alert(
+        "Incomplete",
+        "Please answer all questions before submitting.",
+        [{ text: "OK" }]
+      );
+      return;
+    }
+
+    // Calculate score
+    let correctCount = 0;
+    quiz.questions.forEach((q: any, idx: number) => {
+      if (selectedAnswers[idx] === q.correctAnswer) {
+        correctCount++;
       }
     });
 
+    const totalQuestions = quiz.questions.length;
+    const percentage = Math.round((correctCount / totalQuestions) * 100);
+
+    // Save to Firebase
+    saveQuizResult(courseId as string, quizId as string, correctCount, totalQuestions);
+
     Alert.alert(
-      "Quiz Submitted!",
-      `You scored ${score} out of ${questions.length}`,
+      "Quiz Submitted! 🎉",
+      `You scored ${correctCount} out of ${totalQuestions} (${percentage}%)\n+${Math.round((correctCount / totalQuestions) * 20)} XP earned!`,
       [
         {
           text: "Back to Course",
@@ -87,18 +140,62 @@ export default function QuizScreen() {
         },
       ]
     );
+
+    setQuizCompleted(true);
   };
+
+  if (loading) {
+    return (
+      <ScreenWrapper>
+        <View style={styles.centered}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+          <AppText style={styles.loadingText}>Loading quiz...</AppText>
+        </View>
+      </ScreenWrapper>
+    );
+  }
 
   if (!course || !quiz) {
     return (
       <ScreenWrapper>
         <View style={styles.centered}>
           <AppText>Quiz not found</AppText>
+          <TouchableOpacity 
+            style={styles.backButton} 
+            onPress={() => router.back()}
+          >
+            <AppText style={styles.backButtonText}>Go Back</AppText>
+          </TouchableOpacity>
         </View>
       </ScreenWrapper>
     );
   }
 
+  // If quiz already completed
+  if (quizCompleted && existingScore) {
+    return (
+      <ScreenWrapper>
+        <View style={styles.centered}>
+          <CheckCircle size={60} color={Colors.success} />
+          <AppText style={styles.completedTitle}>Quiz Completed!</AppText>
+          <AppText style={styles.completedScore}>
+            You scored {existingScore.score}/{existingScore.total}
+          </AppText>
+          <AppText style={styles.completedXP}>
+            +{Math.round((existingScore.score / existingScore.total) * 20)} XP earned
+          </AppText>
+          <TouchableOpacity 
+            style={styles.backToCourse}
+            onPress={() => router.push(`/courses/${courseId}`)}
+          >
+            <AppText style={styles.backToCourseText}>Back to Course</AppText>
+          </TouchableOpacity>
+        </View>
+      </ScreenWrapper>
+    );
+  }
+
+  const questions = quiz.questions || [];
   const currentQ = questions[currentQuestion];
 
   return (
@@ -114,8 +211,8 @@ export default function QuizScreen() {
             <AppText style={styles.courseTitle}>{course.title}</AppText>
           </View>
           <View style={styles.timer}>
-            <Clock size={20} color={Colors.textLight} />
-            <AppText style={styles.timerText}>
+            <Clock size={20} color={timeLeft < 60 ? Colors.error : Colors.textLight} />
+            <AppText style={[styles.timerText, timeLeft < 60 && styles.timerWarning]}>
               {Math.floor(timeLeft / 60)}:{(timeLeft % 60).toString().padStart(2, '0')}
             </AppText>
           </View>
@@ -146,7 +243,7 @@ export default function QuizScreen() {
             <AppText style={styles.questionText}>{currentQ.question}</AppText>
 
             <View style={styles.optionsContainer}>
-              {currentQ.options.map((option, index) => (
+              {currentQ.options.map((option: string, index: number) => (
                 <TouchableOpacity
                   key={index}
                   style={[
@@ -175,7 +272,9 @@ export default function QuizScreen() {
             disabled={currentQuestion === 0}
           >
             <ChevronLeft size={20} color={currentQuestion === 0 ? Colors.textLight : Colors.primary} />
-            <AppText style={[styles.navButtonText, currentQuestion === 0 && styles.disabledText]}>Previous</AppText>
+            <AppText style={[styles.navButtonText, currentQuestion === 0 && styles.disabledText]}>
+              Previous
+            </AppText>
           </TouchableOpacity>
 
           {currentQuestion === questions.length - 1 ? (
@@ -184,12 +283,11 @@ export default function QuizScreen() {
             </TouchableOpacity>
           ) : (
             <TouchableOpacity 
-              style={[styles.navButton, currentQuestion === questions.length - 1 && styles.disabledButton]} 
+              style={styles.navButton}
               onPress={handleNext}
-              disabled={currentQuestion === questions.length - 1}
             >
-              <AppText style={[styles.navButtonText, currentQuestion === questions.length - 1 && styles.disabledText]}>Next</AppText>
-              <ChevronRight size={20} color={currentQuestion === questions.length - 1 ? Colors.textLight : Colors.primary} />
+              <AppText style={styles.navButtonText}>Next</AppText>
+              <ChevronRight size={20} color={Colors.primary} />
             </TouchableOpacity>
           )}
         </View>
@@ -206,6 +304,12 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    gap: 20,
+    padding: 20,
+  },
+  loadingText: {
+    marginTop: 10,
+    color: Colors.textLight,
   },
   header: {
     flexDirection: 'row',
@@ -218,6 +322,11 @@ const styles = StyleSheet.create({
   },
   backButton: {
     padding: 8,
+  },
+  backButtonText: {
+    color: Colors.primary,
+    fontSize: 16,
+    fontWeight: '600',
   },
   headerTitle: {
     flex: 1,
@@ -241,6 +350,9 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: Colors.text,
     fontWeight: 'bold',
+  },
+  timerWarning: {
+    color: Colors.error,
   },
   progressContainer: {
     paddingHorizontal: 20,
@@ -360,6 +472,35 @@ const styles = StyleSheet.create({
     borderRadius: 25,
   },
   submitButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  completedTitle: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: Colors.text,
+    marginTop: 20,
+  },
+  completedScore: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: Colors.primary,
+    marginTop: 10,
+  },
+  completedXP: {
+    fontSize: 18,
+    color: Colors.success,
+    marginTop: 5,
+  },
+  backToCourse: {
+    marginTop: 30,
+    backgroundColor: Colors.primary,
+    paddingHorizontal: 30,
+    paddingVertical: 15,
+    borderRadius: 25,
+  },
+  backToCourseText: {
     color: 'white',
     fontSize: 16,
     fontWeight: 'bold',

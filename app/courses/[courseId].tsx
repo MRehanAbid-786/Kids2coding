@@ -3,14 +3,12 @@ import {
   View, 
   StyleSheet, 
   ScrollView, 
-  ImageBackground,
   TouchableOpacity,
   Animated 
 } from "react-native";
 import { AppText } from "../../src/components/AppText";
 import { ScreenWrapper } from "../../src/components/ScreenWrapper";
 import { Colors } from "../../src/constants/colors";
-import { coursesData, courseDetails } from "../../src/data/coursesData";
 import { LinearGradient } from "expo-linear-gradient";
 import { 
   Play, 
@@ -20,21 +18,27 @@ import {
   ChevronRight,
   Download,
   Share2,
-  Star
+  Star,
+  CheckCircle
 } from "lucide-react-native";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useProgress } from "../../src/hooks/useProgress";
+import { getCourseById } from "../../src/services/coursesService";
 
 export default function CourseDetailScreen() {
   const { courseId } = useLocalSearchParams();
   const router = useRouter();
-  const { enrollInCourse, progress } = useProgress();
+  const { enrollInCourse, progress, isEnrolled, isLessonCompleted, getQuizScore } = useProgress();
   
-  const course = coursesData.find(c => c.id === courseId) || coursesData[0];
-  const details = courseDetails[courseId] || courseDetails['web-basics'];
+  const [course, setCourse] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   
   const fadeAnim = useRef(new Animated.Value(0)).current;
-  const enrolled = progress?.enrolledCourses?.includes(courseId);
+
+  useEffect(() => {
+    fetchCourseDetails();
+  }, [courseId]);
 
   useEffect(() => {
     Animated.timing(fadeAnim, {
@@ -44,23 +48,83 @@ export default function CourseDetailScreen() {
     }).start();
   }, []);
 
-  const handleEnroll = async () => {
-    await enrollInCourse(courseId);
-    router.push(`/courses/${courseId}/lessons/${details.syllabus[0].id}`);
+  const fetchCourseDetails = async () => {
+    try {
+      setLoading(true);
+      const courseData = await getCourseById(courseId as string);
+      setCourse(courseData);
+    } catch (err) {
+      setError('Failed to load course details');
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleContinue = () => {
-    // Find first incomplete lesson or go to first lesson
-    const firstIncomplete = details.syllabus.find(lesson => !lesson.completed);
-    router.push(`/courses/${courseId}/lessons/${firstIncomplete?.id || details.syllabus[0].id}`);
+  const enrolled = isEnrolled(courseId as string);
+
+  const handleEnroll = async () => {
+    await enrollInCourse(courseId as string);
   };
+
+  const handleStartLesson = (lessonId: string) => {
+    router.push(`/courses/${courseId}/lessons/${lessonId}`);
+  };
+
+  const handleStartQuiz = (quizId: string) => {
+    router.push(`/courses/${courseId}/quiz/${quizId}`);
+  };
+
+  if (loading) {
+    return (
+      <ScreenWrapper>
+        <View style={styles.centered}>
+          <Animated.View style={{ opacity: fadeAnim }}>
+            <AppText>Loading course details...</AppText>
+          </Animated.View>
+        </View>
+      </ScreenWrapper>
+    );
+  }
+
+  if (error || !course) {
+    return (
+      <ScreenWrapper>
+        <View style={styles.centered}>
+          <AppText>{error || 'Course not found'}</AppText>
+          <TouchableOpacity 
+            style={styles.backButton} 
+            onPress={() => router.back()}
+          >
+            <AppText style={styles.backButtonText}>Go Back</AppText>
+          </TouchableOpacity>
+        </View>
+      </ScreenWrapper>
+    );
+  }
+
+  // Prepare lessons and quizzes arrays
+  const lessons = course.lessons ? Object.keys(course.lessons).map(key => ({
+    id: key,
+    ...course.lessons[key]
+  })) : [];
+
+  const quizzes = course.quizzes ? Object.keys(course.quizzes).map(key => ({
+    id: key,
+    ...course.quizzes[key]
+  })) : [];
+
+  // Calculate stats
+  const completedLessons = lessons.filter(l => isLessonCompleted(courseId as string, l.id)).length;
+  const totalLessons = lessons.length;
+  const progressPercent = totalLessons > 0 ? Math.round((completedLessons / totalLessons) * 100) : 0;
 
   return (
     <Animated.View style={[styles.container, { opacity: fadeAnim }]}>
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
         {/* Hero Section */}
         <LinearGradient
-          colors={[course.color, Colors.primaryDark]}
+          colors={[course.color || Colors.primary, Colors.primaryDark]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={styles.hero}
@@ -68,7 +132,7 @@ export default function CourseDetailScreen() {
           <View style={styles.heroContent}>
             <View style={styles.courseHeader}>
               <View style={styles.emojiContainer}>
-                <AppText style={styles.heroEmoji}>{course.emoji}</AppText>
+                <AppText style={styles.heroEmoji}>{course.emoji || '📚'}</AppText>
               </View>
               <View style={styles.headerActions}>
                 <TouchableOpacity style={styles.iconButton}>
@@ -86,17 +150,30 @@ export default function CourseDetailScreen() {
             <View style={styles.heroStats}>
               <View style={styles.stat}>
                 <BookOpen size={16} color="white" />
-                <AppText style={styles.statText}>{course.lessons} lessons</AppText>
+                <AppText style={styles.statText}>{totalLessons} lessons</AppText>
               </View>
               <View style={styles.stat}>
                 <Trophy size={16} color="white" />
-                <AppText style={styles.statText}>{course.badges.length} badges</AppText>
+                <AppText style={styles.statText}>{quizzes.length} quizzes</AppText>
               </View>
               <View style={styles.stat}>
                 <Award size={16} color="white" />
                 <AppText style={styles.statText}>{course.level}</AppText>
               </View>
             </View>
+
+            {/* Progress Bar if enrolled */}
+            {enrolled && totalLessons > 0 && (
+              <View style={styles.progressSection}>
+                <View style={styles.progressHeader}>
+                  <AppText style={styles.progressText}>Progress: {progressPercent}%</AppText>
+                  <AppText style={styles.progressText}>{completedLessons}/{totalLessons} lessons</AppText>
+                </View>
+                <View style={styles.progressBar}>
+                  <View style={[styles.progressFill, { width: `${progressPercent}%` }]} />
+                </View>
+              </View>
+            )}
           </View>
         </LinearGradient>
 
@@ -107,10 +184,15 @@ export default function CourseDetailScreen() {
             {enrolled ? (
               <TouchableOpacity 
                 style={[styles.actionButton, styles.continueButton]}
-                onPress={handleContinue}
+                onPress={() => {
+                  const firstIncomplete = lessons.find(l => !isLessonCompleted(courseId as string, l.id));
+                  handleStartLesson(firstIncomplete?.id || lessons[0]?.id);
+                }}
               >
                 <Play size={20} color="white" />
-                <AppText style={styles.actionButtonText}>Continue Learning</AppText>
+                <AppText style={styles.actionButtonText}>
+                  {completedLessons === totalLessons ? 'Review Course' : 'Continue Learning'}
+                </AppText>
               </TouchableOpacity>
             ) : (
               <TouchableOpacity 
@@ -126,100 +208,88 @@ export default function CourseDetailScreen() {
           {/* Overview */}
           <View style={styles.section}>
             <AppText style={styles.sectionTitle}>About This Course</AppText>
-            <AppText style={styles.overviewText}>{details.overview}</AppText>
+            <AppText style={styles.overviewText}>{course.description}</AppText>
           </View>
 
-          {/* Learning Objectives */}
-          <View style={styles.section}>
-            <AppText style={styles.sectionTitle}>What You'll Learn 🎯</AppText>
-            {details.learningObjectives.map((objective, index) => (
-              <View key={index} style={styles.objectiveItem}>
-                <Star size={16} color={Colors.primary} style={styles.objectiveIcon} />
-                <AppText style={styles.objectiveText}>{objective}</AppText>
-              </View>
-            ))}
-          </View>
-
-          {/* Syllabus */}
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <AppText style={styles.sectionTitle}>Course Content 📝</AppText>
-              <AppText style={styles.lessonCount}>{details.syllabus.length} lessons</AppText>
-            </View>
-            {details.syllabus.map((lesson, index) => (
-              <TouchableOpacity
-                key={lesson.id}
-                style={[
-                  styles.lessonItem,
-                  lesson.completed && styles.lessonCompleted
-                ]}
-                onPress={() => router.push(`/courses/${courseId}/lessons/${lesson.id}`)}
-              >
-                <View style={styles.lessonNumber}>
-                  <AppText style={styles.lessonNumberText}>{index + 1}</AppText>
-                </View>
-                <View style={styles.lessonContent}>
-                  <View style={styles.lessonHeader}>
-                    <AppText style={styles.lessonEmoji}>{lesson.emoji}</AppText>
-                    <AppText style={styles.lessonTitle}>{lesson.title}</AppText>
-                    {lesson.completed && (
-                      <View style={styles.completedBadge}>
-                        <AppText style={styles.completedText}>✓</AppText>
-                      </View>
-                    )}
-                  </View>
-                  <View style={styles.lessonMeta}>
-                    <AppText style={styles.lessonType}>{lesson.type}</AppText>
-                    <AppText style={styles.lessonDuration}>{lesson.duration}</AppText>
-                  </View>
-                </View>
-                <ChevronRight size={20} color={Colors.textLight} />
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          {/* Projects */}
-          {details.projects && details.projects.length > 0 && (
+          {/* Lessons */}
+          {lessons.length > 0 && (
             <View style={styles.section}>
-              <AppText style={styles.sectionTitle}>Fun Projects 🏗️</AppText>
-              {details.projects.map((project, index) => (
-                <View key={index} style={styles.projectCard}>
-                  <AppText style={styles.projectEmoji}>{project.emoji}</AppText>
-                  <View style={styles.projectContent}>
-                    <AppText style={styles.projectTitle}>{project.title}</AppText>
-                    <AppText style={styles.projectDescription}>{project.description}</AppText>
-                  </View>
-                </View>
-              ))}
+              <View style={styles.sectionHeader}>
+                <AppText style={styles.sectionTitle}>Lessons 📖</AppText>
+                <AppText style={styles.lessonCount}>{lessons.length} lessons</AppText>
+              </View>
+              {lessons.map((lesson, index) => {
+                const completed = isLessonCompleted(courseId as string, lesson.id);
+                return (
+                  <TouchableOpacity
+                    key={lesson.id}
+                    style={[
+                      styles.lessonItem,
+                      completed && styles.lessonCompleted
+                    ]}
+                    onPress={() => handleStartLesson(lesson.id)}
+                    disabled={!enrolled}
+                  >
+                    <View style={styles.lessonNumber}>
+                      <AppText style={styles.lessonNumberText}>{index + 1}</AppText>
+                    </View>
+                    <View style={styles.lessonContent}>
+                      <View style={styles.lessonHeader}>
+                        <AppText style={styles.lessonTitle}>{lesson.title}</AppText>
+                        {completed && (
+                          <CheckCircle size={18} color={Colors.success} />
+                        )}
+                      </View>
+                      <View style={styles.lessonMeta}>
+                        <AppText style={styles.lessonType}>{lesson.type || 'Lesson'}</AppText>
+                        <AppText style={styles.lessonDuration}>{lesson.duration || '10 min'}</AppText>
+                      </View>
+                    </View>
+                    <ChevronRight size={20} color={Colors.textLight} />
+                  </TouchableOpacity>
+                );
+              })}
             </View>
           )}
 
           {/* Quizzes */}
-          {details.quizzes && details.quizzes.length > 0 && (
+          {quizzes.length > 0 && enrolled && (
             <View style={styles.section}>
-              <AppText style={styles.sectionTitle}>Quizzes 🧠</AppText>
-              {details.quizzes.map((quiz, index) => (
-                <TouchableOpacity 
-                  key={quiz.id}
-                  style={styles.quizCard}
-                  onPress={() => router.push(`/courses/${courseId}/quiz/${quiz.id}`)}
-                >
-                  <View style={styles.quizHeader}>
-                    <AppText style={styles.quizEmoji}>{quiz.emoji}</AppText>
-                    <View style={styles.quizInfo}>
-                      <AppText style={styles.quizTitle}>{quiz.title}</AppText>
-                      <AppText style={styles.quizQuestions}>{quiz.questions} questions</AppText>
+              <View style={styles.sectionHeader}>
+                <AppText style={styles.sectionTitle}>Quizzes 🧠</AppText>
+                <AppText style={styles.lessonCount}>{quizzes.length} quizzes</AppText>
+              </View>
+              {quizzes.map((quiz, index) => {
+                const score = getQuizScore(courseId as string, quiz.id);
+                return (
+                  <TouchableOpacity 
+                    key={quiz.id}
+                    style={styles.quizCard}
+                    onPress={() => handleStartQuiz(quiz.id)}
+                  >
+                    <View style={styles.quizHeader}>
+                      <View style={styles.quizEmojiContainer}>
+                        <AppText style={styles.quizEmoji}>📝</AppText>
+                      </View>
+                      <View style={styles.quizInfo}>
+                        <AppText style={styles.quizTitle}>{quiz.title}</AppText>
+                        <AppText style={styles.quizQuestions}>
+                          {quiz.questions?.length || 0} questions
+                        </AppText>
+                      </View>
                     </View>
-                  </View>
-                  {quiz.passed ? (
-                    <View style={styles.quizPassed}>
-                      <AppText style={styles.quizPassedText}>Passed! 🎉</AppText>
-                    </View>
-                  ) : (
-                    <ChevronRight size={20} color={Colors.textLight} />
-                  )}
-                </TouchableOpacity>
-              ))}
+                    {score ? (
+                      <View style={styles.quizScore}>
+                        <AppText style={styles.quizScoreText}>
+                          {score.score}/{score.total}
+                        </AppText>
+                      </View>
+                    ) : (
+                      <ChevronRight size={20} color={Colors.textLight} />
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
             </View>
           )}
         </View>
@@ -232,6 +302,13 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: Colors.background,
+  },
+  centered: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 20,
+    padding: 20,
   },
   scrollView: {
     flex: 1,
@@ -290,6 +367,7 @@ const styles = StyleSheet.create({
   heroStats: {
     flexDirection: 'row',
     gap: 20,
+    flexWrap: 'wrap',
   },
   stat: {
     flexDirection: 'row',
@@ -299,6 +377,33 @@ const styles = StyleSheet.create({
   statText: {
     color: 'white',
     fontSize: 14,
+  },
+  progressSection: {
+    marginTop: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: 12,
+    padding: 12,
+  },
+  progressHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  progressText: {
+    color: 'white',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  progressBar: {
+    height: 6,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    borderRadius: 3,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    backgroundColor: 'white',
+    borderRadius: 3,
   },
   content: {
     padding: 20,
@@ -339,7 +444,6 @@ const styles = StyleSheet.create({
     fontSize: 22,
     fontWeight: 'bold',
     color: Colors.text,
-    marginBottom: 15,
   },
   lessonCount: {
     fontSize: 14,
@@ -349,21 +453,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: Colors.text,
     lineHeight: 24,
-  },
-  objectiveItem: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    marginBottom: 12,
-  },
-  objectiveIcon: {
-    marginTop: 2,
-    marginRight: 12,
-  },
-  objectiveText: {
-    flex: 1,
-    fontSize: 16,
-    color: Colors.text,
-    lineHeight: 22,
   },
   lessonItem: {
     flexDirection: 'row',
@@ -399,31 +488,15 @@ const styles = StyleSheet.create({
   lessonHeader: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     marginBottom: 5,
-  },
-  lessonEmoji: {
-    fontSize: 16,
-    marginRight: 10,
   },
   lessonTitle: {
     fontSize: 16,
     fontWeight: '600',
     color: Colors.text,
     flex: 1,
-  },
-  completedBadge: {
-    backgroundColor: Colors.success,
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginLeft: 10,
-  },
-  completedText: {
-    color: 'white',
-    fontSize: 12,
-    fontWeight: 'bold',
+    marginRight: 10,
   },
   lessonMeta: {
     flexDirection: 'row',
@@ -438,36 +511,10 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: Colors.textLight,
   },
-  projectCard: {
-    flexDirection: 'row',
-    backgroundColor: Colors.surface,
-    borderRadius: 15,
-    padding: 20,
-    marginBottom: 15,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  projectEmoji: {
-    fontSize: 24,
-    marginRight: 15,
-  },
-  projectContent: {
-    flex: 1,
-  },
-  projectTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: Colors.text,
-    marginBottom: 5,
-  },
-  projectDescription: {
-    fontSize: 14,
-    color: Colors.textLight,
-    lineHeight: 20,
-  },
   quizCard: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     backgroundColor: Colors.surface,
     borderRadius: 15,
     padding: 15,
@@ -480,9 +527,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
+  quizEmojiContainer: {
+    width: 40,
+    height: 40,
+    backgroundColor: Colors.primary + '20',
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
   quizEmoji: {
     fontSize: 20,
-    marginRight: 15,
   },
   quizInfo: {
     flex: 1,
@@ -497,15 +552,25 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: Colors.textLight,
   },
-  quizPassed: {
+  quizScore: {
     backgroundColor: Colors.success,
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 12,
   },
-  quizPassedText: {
+  quizScoreText: {
     color: 'white',
     fontSize: 12,
     fontWeight: 'bold',
+  },
+  backButton: {
+    backgroundColor: Colors.primary,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 10,
+  },
+  backButtonText: {
+    color: 'white',
+    fontWeight: '600',
   },
 });
