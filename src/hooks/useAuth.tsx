@@ -1,31 +1,16 @@
 import NetInfo from "@react-native-community/netinfo";
-import { getApp, getApps, initializeApp } from "firebase/app";
 import {
   createUserWithEmailAndPassword,
-  getAuth,
   onAuthStateChanged,
   signInWithEmailAndPassword,
   signOut,
   updateProfile,
 } from "firebase/auth";
-import { get, getDatabase, ref, set, update } from "firebase/database";
+import { get, ref, set, update } from "firebase/database";
+import { auth, database } from '../firebase/config';
 import { useEffect, useState } from "react";
 
-// --- FIREBASE INITIALIZATION ---
-const firebaseConfig = {
-  apiKey: "AIzaSyDs5CfZJPabJH8AyC5x0hg-ra3Ula1Ucso",
-  authDomain: "ids2coding.firebaseapp.com", // Replace with yours
-  projectId: "ids2coding", // Replace with yours
-  databaseURL: "https://ids2coding-default-rtdb.firebaseio.com/", // Replace with yours
-  storageBucket: "kids-2-coding.appspot.com",
-  messagingSenderId: "123456789",
-  appId: "1:123456789:web:123456789",
-};
-
-const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
-const auth = getAuth(app);
-const database = getDatabase(app);
-// -------------------------------
+// Use centralized Firebase `auth` and `database` from src/firebase/config
 
 export function useAuth() {
   const [user, setUser] = useState<any>(null);

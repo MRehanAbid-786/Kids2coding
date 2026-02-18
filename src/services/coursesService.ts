@@ -6,7 +6,6 @@ export async function getCourses() {
   try {
     console.log("📡 [getCourses] Fetching from Firebase...");
     
-    // Check if database is initialized
     if (!database) {
       console.error("❌ [getCourses] Database not initialized!");
       return [];
@@ -16,46 +15,11 @@ export async function getCourses() {
     const snapshot = await get(coursesRef);
     console.log("📡 [getCourses] Snapshot exists:", snapshot.exists());
 
-    // 🔍 DEBUG: Check root keys to see what's in the database
-    try {
-      const rootRef = ref(database, '/');
-      const rootSnap = await get(rootRef);
-      if (rootSnap.exists()) {
-        const rootKeys = Object.keys(rootSnap.val());
-        console.log("📁 [getCourses] Root database keys:", rootKeys);
-        
-        if (rootKeys.includes('courses')) {
-          console.log("✅ [getCourses] 'courses' node found at root");
-        } else {
-          console.warn("⚠️ [getCourses] 'courses' node NOT found at root!");
-          console.log("💡 [getCourses] Available keys:", rootKeys.join(', '));
-        }
-      } else {
-        console.log("📁 [getCourses] Root database is completely empty");
-      }
-    } catch (rootErr) {
-      console.error("❌ [getCourses] Error checking root:", rootErr);
-    }
-
     if (snapshot.exists()) {
       const coursesObject = snapshot.val();
       const keys = Object.keys(coursesObject);
       console.log("📡 [getCourses] Found courses with keys:", keys);
-      console.log("📡 [getCourses] Number of courses:", keys.length);
       
-      if (keys.length > 0) {
-        // Log first course as sample
-        const firstKey = keys[0];
-        console.log("📡 [getCourses] Sample course data:", {
-          id: firstKey,
-          title: coursesObject[firstKey].title,
-          level: coursesObject[firstKey].level,
-          hasLessons: !!coursesObject[firstKey].lessons,
-          lessonsCount: coursesObject[firstKey].lessonsCount
-        });
-      }
-      
-      // Convert to array with proper error handling
       const coursesArray = keys.map(key => {
         const course = coursesObject[key];
         return {
@@ -76,19 +40,56 @@ export async function getCourses() {
         };
       });
       
-      console.log("✅ [getCourses] Successfully converted", coursesArray.length, "courses");
+      console.log("✅ [getCourses] Loaded", coursesArray.length, "courses");
       return coursesArray;
     }
     
-    console.log("📡 [getCourses] No data found at 'courses' path");
+    console.log("📡 [getCourses] No courses found");
     return [];
   } catch (error) {
     console.error("❌ [getCourses] Error:", error);
-    if (error.code) {
-      console.error("❌ [getCourses] Error code:", error.code);
-      console.error("❌ [getCourses] Error message:", error.message);
-    }
     return [];
+  }
+}
+
+// Get single course by ID
+export async function getCourseById(id) {
+  try {
+    console.log(`📡 [getCourseById] Fetching course: ${id}`);
+    
+    if (!database) {
+      console.error("❌ [getCourseById] Database not initialized!");
+      return null;
+    }
+    
+    const courseRef = ref(database, `courses/${id}`);
+    const snapshot = await get(courseRef);
+    
+    if (snapshot.exists()) {
+      const course = snapshot.val();
+      console.log(`✅ [getCourseById] Found:`, course.title);
+      return {
+        id,
+        title: course.title || '',
+        description: course.description || '',
+        level: course.level || 'beginner',
+        tags: course.tags || [],
+        emoji: course.emoji || '📚',
+        duration: course.duration || '',
+        lessonsCount: course.lessonsCount || 0,
+        lessons: course.lessons || {},
+        quizzes: course.quizzes || {},
+        color: course.color || '#4F46E5',
+        bgColor: course.bgColor || '#F3F4F6',
+        ...course
+      };
+    }
+    
+    console.log(`📡 [getCourseById] Course not found: ${id}`);
+    return null;
+  } catch (error) {
+    console.error(`❌ [getCourseById] Error:`, error);
+    return null;
   }
 }
 
@@ -104,7 +105,6 @@ export async function addCourse(courseData) {
     const coursesRef = ref(database, 'courses');
     const newCourseRef = push(coursesRef);
     
-    // Ensure lessonsCount is calculated from lessons object if present
     let lessonsCount = courseData.lessonsCount || 0;
     if (courseData.lessons && Object.keys(courseData.lessons).length > 0) {
       lessonsCount = Object.keys(courseData.lessons).length;
@@ -146,14 +146,11 @@ export async function updateCourse(id, updates) {
     }
     
     const courseRef = ref(database, `courses/${id}`);
-    
-    // Get current data first
     const snapshot = await get(courseRef);
     if (!snapshot.exists()) {
       throw new Error('Course not found');
     }
     
-    // If lessons are updated, recalculate lessonsCount
     let finalUpdates = { ...updates };
     if (updates.lessons) {
       finalUpdates.lessonsCount = Object.keys(updates.lessons).length;

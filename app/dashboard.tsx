@@ -138,7 +138,7 @@ export default function DashboardScreen() {
         >
           <View style={styles.headerDarken} />
           <View style={styles.headerContent}>
-            <View style={styles.headerTop}>
+             <View style={styles.headerTop}>
               <View>
                 <AppText style={styles.greeting}>
                   Welcome back, {getFirstName()}! 👋

@@ -3,6 +3,12 @@ import { StatusBar } from "expo-status-bar";
 import { useEffect } from "react";
 import { Colors } from "../src/constants/colors";
 import { useAuth } from "../src/hooks/useAuth";
+import { LogBox } from 'react-native';
+
+LogBox.ignoreLogs([
+  'Blocked aria-hidden',
+  '`aria-hidden`',
+]);
 
 export default function Layout() {
   const { user, loading, isAuthenticated } = useAuth();

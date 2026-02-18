@@ -1,22 +1,26 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { View, StyleSheet, ScrollView, TouchableOpacity, Alert } from "react-native";
+import { View, StyleSheet, ScrollView, TouchableOpacity, Alert, Platform } from "react-native";
 import { AppText } from "../../../../src/components/AppText";
 import { ScreenWrapper } from "../../../../src/components/ScreenWrapper";
 import { Colors } from "../../../../src/constants/colors";
 import { Play, ChevronLeft, ChevronRight, Bookmark, Share, CheckCircle } from "lucide-react-native";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useProgress } from "../../../../src/hooks/useProgress";
 import { getCourseById } from "../../../../src/services/coursesService";
+import { Video, ResizeMode, AVPlaybackStatus } from 'expo-av';
+import { WebView } from 'react-native-webview';
 
 export default function LessonScreen() {
   const { courseId, lessonId } = useLocalSearchParams();
   const router = useRouter();
+  const videoRef = useRef<Video>(null);
   const [bookmarked, setBookmarked] = useState(false);
   const [course, setCourse] = useState<any>(null);
   const [lesson, setLesson] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [lessonIndex, setLessonIndex] = useState(0);
   const [totalLessons, setTotalLessons] = useState(0);
+  const [videoStatus, setVideoStatus] = useState<AVPlaybackStatus | null>(null);
   
   const { completeLesson, isLessonCompleted } = useProgress();
   const [completed, setCompleted] = useState(false);
@@ -55,6 +59,60 @@ export default function LessonScreen() {
       console.error("Error fetching course:", error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Helper to check if URL is a YouTube link
+  const isYouTubeUrl = (url: string): boolean => {
+    return url.includes('youtube.com') || url.includes('youtu.be');
+  };
+
+  // Extract YouTube video ID
+  const getYouTubeVideoId = (url: string): string | null => {
+    const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
+    const match = url.match(regExp);
+    return (match && match[2].length === 11) ? match[2] : null;
+  };
+
+  // Render appropriate video player
+  const renderVideo = () => {
+    if (!lesson.videoUrl) return null;
+
+    if (isYouTubeUrl(lesson.videoUrl)) {
+      const videoId = getYouTubeVideoId(lesson.videoUrl);
+      if (!videoId) return null;
+
+      // YouTube embed URL
+      const embedUrl = `https://www.youtube.com/embed/${videoId}`;
+      
+      return (
+        <View style={styles.videoContainer}>
+          <WebView
+            source={{ uri: embedUrl }}
+            style={styles.video}
+            javaScriptEnabled={true}
+            domStorageEnabled={true}
+            allowsFullscreenVideo={true}
+            mediaPlaybackRequiresUserAction={false}
+          />
+        </View>
+      );
+    } else {
+      // Regular video file (mp4, etc.)
+      return (
+        <View style={styles.videoContainer}>
+          <Video
+            ref={videoRef}
+            source={{ uri: lesson.videoUrl }}
+            style={styles.video}
+            useNativeControls
+            resizeMode={ResizeMode.CONTAIN}
+            onPlaybackStatusUpdate={status => setVideoStatus(status)}
+            shouldPlay={false}
+            isLooping={false}
+          />
+        </View>
+      );
     }
   };
 
@@ -157,9 +215,17 @@ export default function LessonScreen() {
           <View style={styles.lessonHeader}>
             <AppText style={styles.lessonEmoji}>{lesson.emoji || '📚'}</AppText>
             <AppText style={styles.lessonTitle}>{lesson.title}</AppText>
-            <AppText style={styles.lessonDuration}>
-              ⏱️ {lesson.duration || '10 min'}
-            </AppText>
+            <View style={styles.lessonMetaRow}>
+              <AppText style={styles.lessonDuration}>
+                ⏱️ {lesson.duration || '10 min'}
+              </AppText>
+              {lesson.type === 'video' && (
+                <View style={styles.videoBadge}>
+                  <Play size={14} color="white" />
+                  <AppText style={styles.videoBadgeText}>Video</AppText>
+                </View>
+              )}
+            </View>
             {completed && (
               <View style={styles.completedBadge}>
                 <CheckCircle size={20} color={Colors.success} />
@@ -168,11 +234,15 @@ export default function LessonScreen() {
             )}
           </View>
 
-          {/* Video Placeholder - Replace with actual video player */}
-          <View style={styles.videoPlaceholder}>
-            <Play size={48} color="white" />
-            <AppText style={styles.videoText}>Lesson Video</AppText>
-          </View>
+          {/* Video Player */}
+          {lesson.type === 'video' && lesson.videoUrl ? (
+            renderVideo()
+          ) : (
+            <View style={styles.videoPlaceholder}>
+              <Play size={48} color="white" />
+              <AppText style={styles.videoText}>Text Lesson</AppText>
+            </View>
+          )}
 
           {/* Lesson Content */}
           <View style={styles.textContent}>
@@ -313,10 +383,29 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 10,
   },
+  lessonMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 10,
+  },
   lessonDuration: {
     fontSize: 16,
     color: Colors.textLight,
-    marginBottom: 10,
+  },
+  videoBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.primary,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    gap: 4,
+  },
+  videoBadgeText: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: '600',
   },
   completedBadge: {
     flexDirection: 'row',
@@ -331,6 +420,18 @@ const styles = StyleSheet.create({
     color: Colors.success,
     fontSize: 14,
     fontWeight: '600',
+  },
+  videoContainer: {
+    width: '100%',
+    height: 220,
+    marginBottom: 30,
+    borderRadius: 16,
+    overflow: 'hidden',
+    backgroundColor: '#000',
+  },
+  video: {
+    width: '100%',
+    height: '100%',
   },
   videoPlaceholder: {
     backgroundColor: Colors.primary,
