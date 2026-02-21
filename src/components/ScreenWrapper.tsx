@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import {
   View,
   StyleSheet,
@@ -38,6 +38,16 @@ export const ScreenWrapper: React.FC<ScreenWrapperProps> = ({
     children
   );
 
+  useEffect(() => {
+    if (typeof document !== 'undefined' && document.activeElement instanceof HTMLElement) {
+      try {
+        document.activeElement.blur();
+      } catch (e) {
+        // ignore
+      }
+    }
+  }, []);
+
   return (
     <Container style={[styles.container, style]} {...props}>
       <StatusBar
@@ -49,6 +59,10 @@ export const ScreenWrapper: React.FC<ScreenWrapperProps> = ({
     </Container>
   );
 };
+
+// Blur any focused element on mount (web) to avoid aria-hidden focus conflicts
+// when navigating or hiding overlays. This helps prevent the browser warning
+// "Blocked aria-hidden on an element because its descendant retained focus.".
 
 const styles = StyleSheet.create({
   container: {

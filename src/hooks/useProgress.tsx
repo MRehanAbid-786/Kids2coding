@@ -26,7 +26,7 @@ export function useProgress() {
         if (snapshot.exists()) {
           setProgress(snapshot.val());
         } else {
-          // Create initial progress document
+          // Create initial progress document with game fields
           const initialProgress = {
             enrolledCourses: [],
             completedLessons: {},
@@ -35,6 +35,10 @@ export function useProgress() {
             totalXP: 0,
             streak: 0,
             lastActive: new Date().toISOString(),
+            // Game progress fields
+            gamesWon: 0,
+            gamesLost: 0,
+            games: {}
           };
           
           // Save to Realtime Database
@@ -256,6 +260,95 @@ export function useProgress() {
     }
   };
 
+  // ======================
+  // 🎮 GAME PROGRESS FUNCTIONS
+  // ======================
+
+  // Record game outcome (win/loss) and save progress
+  const recordGameResult = async (gameId: string, won: boolean) => {
+    const userId = getUserId();
+    if (!userId || !progress) return { success: false, error: 'Not logged in' };
+
+    try {
+      const progressRef = ref(database, `users/${userId}/progress`);
+      const updates: any = {
+        lastActive: new Date().toISOString(),
+      };
+
+      // Update global win/loss counts
+      const currentWins = progress.gamesWon || 0;
+      const currentLosses = progress.gamesLost || 0;
+      updates.gamesWon = currentWins + (won ? 1 : 0);
+      updates.gamesLost = currentLosses + (won ? 0 : 1);
+
+      // Also store per-game stats
+      const gameStats = progress.games?.[gameId] || { wins: 0, losses: 0, bestScore: 0 };
+      const newStats = {
+        wins: gameStats.wins + (won ? 1 : 0),
+        losses: gameStats.losses + (won ? 0 : 1),
+        lastPlayed: new Date().toISOString()
+      };
+      
+      updates[`games/${gameId}`] = newStats;
+
+      await update(progressRef, updates);
+      
+      // Update local state
+      setProgress((prev: any) => ({
+        ...prev,
+        ...updates,
+        games: {
+          ...prev?.games,
+          [gameId]: newStats
+        }
+      }));
+
+      return { success: true };
+    } catch (err: any) {
+      console.error('Error recording game result:', err);
+      return { success: false, error: err.message };
+    }
+  };
+
+  // Save game progress (current level, score, etc.)
+  const saveGameProgress = async (gameId: string, levelIndex: number, score: number, completed: boolean) => {
+    const userId = getUserId();
+    if (!userId || !progress) return { success: false };
+
+    try {
+      const progressRef = ref(database, `users/${userId}/progress`);
+      const updates: any = {
+        lastActive: new Date().toISOString(),
+      };
+
+      // Update game-specific progress
+      updates[`games/${gameId}`] = {
+        currentLevel: levelIndex,
+        score: score,
+        completed: completed,
+        lastPlayed: new Date().toISOString()
+      };
+
+      await update(progressRef, updates);
+      
+      // Update local state
+      setProgress((prev: any) => ({
+        ...prev,
+        ...updates
+      }));
+
+      return { success: true };
+    } catch (err: any) {
+      console.error('Error saving game progress:', err);
+      return { success: false, error: err.message };
+    }
+  };
+
+  // Get game progress for a specific game
+  const getGameProgress = (gameId: string) => {
+    return progress?.games?.[gameId] || null;
+  };
+
   // Get user's level based on XP
   const getUserLevel = (): number => {
     if (!progress?.totalXP) return 1;
@@ -270,6 +363,7 @@ export function useProgress() {
   };
 
   return {
+    // Original returns
     progress,
     loading,
     error,
@@ -283,5 +377,12 @@ export function useProgress() {
     saveQuizResult,
     enrollInCourse,
     earnBadge,
+    
+    // New game-related returns
+    recordGameResult,
+    saveGameProgress,
+    getGameProgress,
+    gamesWon: progress?.gamesWon || 0,
+    gamesLost: progress?.gamesLost || 0,
   };
 }

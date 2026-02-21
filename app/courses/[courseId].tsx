@@ -1,3 +1,4 @@
+import { ErrorBoundary } from '../../src/components/ErrorBoundary';
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { 
   View, 
@@ -120,6 +121,7 @@ export default function CourseDetailScreen() {
   const progressPercent = totalLessons > 0 ? Math.round((completedLessons / totalLessons) * 100) : 0;
 
   return (
+    <ErrorBoundary>
     <Animated.View style={[styles.container, { opacity: fadeAnim }]}>
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
         {/* Hero Section */}
@@ -295,6 +297,7 @@ export default function CourseDetailScreen() {
         </View>
       </ScrollView>
     </Animated.View>
+    </ErrorBoundary>
   );
 }
 

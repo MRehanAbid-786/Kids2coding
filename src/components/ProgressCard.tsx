@@ -43,7 +43,7 @@ export const ProgressCard: React.FC<ProgressCardProps> = ({
   const { courses, loading: coursesLoading } = useCourses();
   
   const [currentTipIndex, setCurrentTipIndex] = useState(0);
-  const [showRoadmap, setShowRoadmap] = useState(false);
+  const [showRoadmap, setShowRoadmap] = useState(true);
   
   // Animation values
   const progressAnim = useRef(new Animated.Value(0)).current;
